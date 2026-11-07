@@ -4,7 +4,7 @@ EurekaWorld **Account Service API**: the internal ECS service that will own all 
 
 Design: `EurekaWorld_Account_Service_Design_v1.0` (project docs). Not created from `ew-app-api-base`: it is an internal infrastructure service, like `ew-grid-service-api` and `ew-mail-gateway`.
 
-**Status (0.1.0):** skeleton only — `/health`, dev container, production image and ECS deploy kit. No registration endpoints, database or caller authentication yet.
+**Status (0.1.0):** skeleton only — `/health`, dev container, production image and ECS deploy kit. Deployed to ECS on 2026-11-07 and healthy at `http://apiaccounttemp.eurekaworld.internal:8080` (VPC only). No registration endpoints, database or caller authentication yet.
 
 ## Stack
 
