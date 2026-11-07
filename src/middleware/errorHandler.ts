@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
 // Every error response is { code, message } (Developers Guide: Error responses).
@@ -8,6 +9,12 @@ export function notFound(req: Request, res: Response): void {
 }
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
+  if (res.headersSent) return;
+  if (err instanceof AppError) {
+    res.status(err.status).json({ code: err.code, message: err.message });
+    return;
+  }
+
   const e = err as { type?: string; status?: number; message?: string; stack?: string };
 
   if (e?.type === 'entity.parse.failed') {

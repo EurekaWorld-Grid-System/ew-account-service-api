@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
-import { app } from '../src/app';
+import { testApp } from './fakes';
 
 describe('ew-account-service-api', () => {
+  const app = testApp();
+
   it('GET /health returns ok with service and version', async () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);

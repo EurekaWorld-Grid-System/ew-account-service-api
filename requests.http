@@ -1,6 +1,45 @@
-# VS Code REST Client / Thunder Client. Dev container: localhost:3060,
-# or http://account-service-api:8080 from another container on the ew-dev network.
+# VS Code REST Client / Thunder Client. Dev container: localhost:3060 on the Docker
+# server (or the port VS Code forwards to your workstation), or
+# http://account-service-api:8080 from another container on the ew-dev network.
 @base = http://localhost:3060
+# = ACCOUNT_SERVICE_API_KEY in .env
+@key = change-me
 
 ### Health
 GET {{base}}/health
+
+### Validate coupon
+POST {{base}}/registration/validate-coupon
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{ "couponCode": "EW00000000X" }
+
+### Validate email
+POST {{base}}/registration/validate-email
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{ "email": "someone@example.com" }
+
+### Validate username
+POST {{base}}/registration/validate-username
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{ "username": "testuser01" }
+
+### Register (use ROBUST_SKIP=true in .env to skip the grid account)
+POST {{base}}/registration
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{
+  "couponCode": "EW00000000X",
+  "username": "testuser01",
+  "firstName": "Test",
+  "lastName": "User",
+  "email": "someone@example.com",
+  "password": "change-me-123",
+  "avatarCode": "Glen"
+}

@@ -17,7 +17,19 @@
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "__PORT__" },
         { "name": "LOG_LEVEL", "value": "info" },
-        { "name": "LOG_FORMAT", "value": "json" }
+        { "name": "LOG_FORMAT", "value": "json" },
+        { "name": "AURORA_HOST", "value": "__AURORA_HOST__" },
+        { "name": "AURORA_PORT", "value": "__AURORA_PORT__" },
+        { "name": "AURORA_USER", "value": "__AURORA_USER__" },
+        { "name": "INDEX_DB_NAME", "value": "__INDEX_DB_NAME__" },
+        { "name": "GRID_DB_NAME", "value": "__GRID_DB_NAME__" },
+        { "name": "ROBUST_BASE_URL", "value": "__ROBUST_BASE_URL__" },
+        { "name": "BMS_ADAPTER_BASE_URL", "value": "__BMS_ADAPTER_BASE_URL__" }
+      ],
+      "secrets": [
+        { "name": "ACCOUNT_SERVICE_API_KEY", "valueFrom": "__ACCOUNT_SERVICE_API_KEY_SECRET__" },
+        { "name": "AURORA_PASSWORD", "valueFrom": "__AURORA_PASSWORD_SECRET__" },
+        { "name": "BMS_ADAPTER_API_KEY", "valueFrom": "__BMS_ADAPTER_API_KEY_SECRET__" }
       ],
       "healthCheck": {
         "command": [

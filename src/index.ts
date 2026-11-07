@@ -1,9 +1,27 @@
-import { app } from './app';
-import { config, API_VERSION, SERVICE_NAME } from './config';
+import { createApp } from './app';
+import { config, loadRegistrationConfig, API_VERSION, SERVICE_NAME } from './config';
+import { createDatabases } from './services/db';
+import { HttpRobustClient } from './services/robust';
+import { HttpBmsAdapterClient } from './services/bmsAdapter';
 import { logger } from './utils/logger';
+
+const reg = loadRegistrationConfig();
+const dbs = createDatabases(reg.db);
+
+const app = createApp({
+  apiKey: reg.apiKey,
+  registration: {
+    index: dbs.index,
+    grid: dbs.grid,
+    robust: new HttpRobustClient(reg.robustBaseUrl, reg.robustTimeoutMs),
+    bms: new HttpBmsAdapterClient(reg.bmsAdapterBaseUrl, reg.bmsAdapterApiKey, reg.bmsAdapterTimeoutMs),
+    robustSkip: reg.robustSkip,
+  },
+});
 
 const server = app.listen(config.port, () => {
   logger.info(`${SERVICE_NAME} started`, { port: config.port, env: config.nodeEnv, version: API_VERSION });
+  if (reg.robustSkip) logger.warn('ROBUST_SKIP is enabled: registrations create no grid account');
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
@@ -16,7 +34,8 @@ function shutdown(signal: string): void {
   shuttingDown = true;
   logger.info(`${signal} received, shutting down gracefully`);
 
-  server.close(err => {
+  server.close(async err => {
+    await dbs.close();
     if (err) {
       logger.error('Error during shutdown', { message: err.message });
       process.exit(1);

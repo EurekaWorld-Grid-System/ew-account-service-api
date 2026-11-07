@@ -36,7 +36,68 @@ A caller can reach it only if its task security group is in the internal ALB sec
 | DNS | Private zone `eurekaworld.internal`: CNAME `apiaccounttemp` → internal ALB |
 | Health checks | Container: Node HTTP check on `/health` (`node:22-alpine` has no `curl`), 30 s interval, `startPeriod` 30. Service grace period 30 s. Target group: healthy 2, unhealthy 3 |
 | Rollback | Deployment circuit breaker with automatic rollback |
-| Secrets | None yet. When registration is added (Aurora password, mail gateway key, JWT keys): one plain-text secret per value, `ew-account-service-api/<value>`, plus `secretsmanager:GetSecretValue` on those secrets for the execution role |
+| Secrets | From 0.2.0: `ew-account-service-api/api-key`, `/aurora-password`, `/bms-adapter-api-key` (one plain-text secret each), read by the execution role (`$APP-secrets` inline policy). See "Registration setup" |
+
+## Registration setup (0.2.0, once)
+
+From 0.2.0 the service reads Aurora (`ew_index` + the grid DB), calls Robust and calls bms-adapter, so
+`config.env` has more `SET_DURING_SETUP` values (`GRID_DB_NAME`, `ROBUST_BASE_URL` and three secret ARNs) and
+`deploy.sh` refuses to run until they are filled. Do this after 0.2.0 has been tested in dev, in one terminal:
+
+```bash
+source deploy/config.env
+```
+
+**a. avatar_index table** — `db/avatar_index.sql` on `ew_index` as a DB admin, then one row per avatar alias
+Robust knows (`AvatarAccount_<alias>` in Robust's config).
+
+**b. Database user** — `db/setup.sql`, as the Aurora admin: `'account_service_api'@'172.31.%'` with `SELECT` on
+`ew_index.account_index`, `user_index`, `license_index`, `institute_index`, `avatar_index` and
+`<grid DB>.useraccounts`. Put the production grid DB name in `config.env` as `GRID_DB_NAME`, and the production
+Robust URL as `ROBUST_BASE_URL`.
+
+**c. Secrets** — one plain-text secret each (Secrets Manager convention `<component>/<value>`):
+
+```bash
+aws secretsmanager create-secret --region $R --name $APP/api-key --secret-string "$(openssl rand -hex 32)" --query ARN --output text
+aws secretsmanager create-secret --region $R --name $APP/aurora-password --secret-string '<password from step b>' --query ARN --output text
+aws secretsmanager create-secret --region $R --name $APP/bms-adapter-api-key --secret-string '<bms-adapter production X-Api-Key>' --query ARN --output text
+```
+
+Copy the three ARNs into `config.env` (`ACCOUNT_SERVICE_API_KEY_SECRET`, `AURORA_PASSWORD_SECRET`,
+`BMS_ADAPTER_API_KEY_SECRET`). The `api-key` value is what callers (ew-portal-api) send in `X-Api-Key`; hand it
+to the caller's configuration through a secure channel, never the message board.
+
+**d. Execution role** may read this component's secrets only:
+
+```bash
+aws iam put-role-policy --role-name $APP-exec --policy-name $APP-secrets --policy-document \
+  "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"secretsmanager:GetSecretValue\",\"Resource\":\"arn:aws:secretsmanager:$R:$ACCT:secret:$APP/*\"}]}"
+```
+
+**e. Network** — the task SG (`$SG`) must reach Aurora (3306), bms-adapter (8080, SG `sg-07d54b1ac96df3af3`) and
+Robust (its HTTP port). Add `$SG` to those security groups' inbound rules:
+
+```bash
+aws ec2 authorize-security-group-ingress --group-id <Aurora SG> --region $R --protocol tcp --port 3306 --source-group $SG
+aws ec2 authorize-security-group-ingress --group-id sg-07d54b1ac96df3af3 --region $R --protocol tcp --port 8080 --source-group $SG
+aws ec2 authorize-security-group-ingress --group-id <Robust EC2 SG> --region $R --protocol tcp --port <Robust port> --source-group $SG
+```
+
+The caller (ew-portal-api) already reaches the internal ALB (it calls `apiaccount.eurekaworld.internal`).
+
+**f. Deploy** — commit `config.env`, then `bash deploy/deploy.sh`. A missing variable stops the task at start
+(check `/ecs/ew-account-service-api`).
+
+Smoke test from the dev server (the key from step c):
+
+```bash
+curl -s -X POST http://apiaccounttemp.eurekaworld.internal:8080/registration/validate-username \
+  -H 'Content-Type: application/json' \
+  -H "X-Api-Key: $(aws secretsmanager get-secret-value --region $R --secret-id $APP/api-key --query SecretString --output text)" \
+  -d '{"username":"smoke_test_name_x"}'
+# {"available":true}  → ew_index and grid DB access work
+```
 
 ## Redeploy
 

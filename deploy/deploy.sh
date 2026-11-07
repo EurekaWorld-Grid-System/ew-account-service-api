@@ -48,6 +48,16 @@ sed -e "s|__APP__|$APP|g" \
     -e "s|__PORT__|$PORT|g" \
     -e "s|__EXEC_ROLE_ARN__|$EXEC_ROLE_ARN|g" \
     -e "s|__IMAGE__|$IMAGE|g" \
+    -e "s|__AURORA_HOST__|$AURORA_HOST|g" \
+    -e "s|__AURORA_PORT__|$AURORA_PORT|g" \
+    -e "s|__AURORA_USER__|$AURORA_USER|g" \
+    -e "s|__INDEX_DB_NAME__|$INDEX_DB_NAME|g" \
+    -e "s|__GRID_DB_NAME__|$GRID_DB_NAME|g" \
+    -e "s|__ROBUST_BASE_URL__|$ROBUST_BASE_URL|g" \
+    -e "s|__BMS_ADAPTER_BASE_URL__|$BMS_ADAPTER_BASE_URL|g" \
+    -e "s|__ACCOUNT_SERVICE_API_KEY_SECRET__|$ACCOUNT_SERVICE_API_KEY_SECRET|g" \
+    -e "s|__AURORA_PASSWORD_SECRET__|$AURORA_PASSWORD_SECRET|g" \
+    -e "s|__BMS_ADAPTER_API_KEY_SECRET__|$BMS_ADAPTER_API_KEY_SECRET|g" \
     -e "s|__LOG_GROUP__|$LOG_GROUP|g" \
     -e "s|__R__|$R|g" \
     "$DIR/task-definition.json" > "$TASKDEF"
