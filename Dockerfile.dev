@@ -1,0 +1,14 @@
+# Dev container image. node_modules are installed at build time into
+# /workspace/node_modules; docker-compose.dev.yml keeps them in a named volume
+# (seeded from this image on first creation) so the source bind mount never hides them.
+FROM node:22-alpine
+
+RUN apk add --no-cache git bash curl jq
+
+WORKDIR /workspace
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund && chown -R node:node /workspace
+
+USER node
+EXPOSE 8080
+CMD ["sleep", "infinity"]

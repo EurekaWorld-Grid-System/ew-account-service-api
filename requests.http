@@ -1,0 +1,6 @@
+# VS Code REST Client / Thunder Client. Dev container: localhost:3060,
+# or http://account-service-api:8080 from another container on the ew-dev network.
+@base = http://localhost:3060
+
+### Health
+GET {{base}}/health

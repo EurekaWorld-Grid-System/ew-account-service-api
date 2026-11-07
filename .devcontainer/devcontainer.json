@@ -1,0 +1,25 @@
+{
+  "name": "ew-account-service-api",
+  "dockerComposeFile": "../docker-compose.dev.yml",
+  "service": "api",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "node",
+  "initializeCommand": "docker network inspect ew-dev >/dev/null 2>&1 || docker network create ew-dev; test -f .env || cp .env.example .env",
+  "postCreateCommand": "npm install --no-audit --no-fund",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vitest.explorer",
+        "mikestead.dotenv",
+        "humao.rest-client"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.preferences.importModuleSpecifier": "relative"
+      }
+    }
+  }
+}

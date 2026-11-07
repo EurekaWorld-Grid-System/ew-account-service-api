@@ -1,0 +1,31 @@
+name: ew-account-service-api-prod
+
+# Production image, as it runs on ECS. Use it on the dev server to test the prod
+# build before deploying.
+#
+#   cp .env.example .env.prod      # set NODE_ENV=production
+#   docker compose -f docker-compose.prod.yml up --build
+#   curl -s localhost:3069/health
+
+services:
+  api:
+    image: ew-account-service-api:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ew-account-service-api-prod
+    ports:
+      - "3069:8080" # prod-check host port (dev port + 9)
+    env_file:
+      - .env.prod
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - default
+      - ew-dev
+
+networks:
+  ew-dev:
+    external: true
+    name: ew-dev

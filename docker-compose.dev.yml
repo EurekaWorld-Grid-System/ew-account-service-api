@@ -1,0 +1,36 @@
+name: ew-account-service-api-dev
+
+services:
+  api:
+    image: ew-account-service-api:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ew-account-service-api-dev
+    volumes:
+      - .:/workspace:cached
+      # Named volume: seeded from the image's node_modules on first creation and
+      # keeps them from being hidden by the bind mount above.
+      - node_modules:/workspace/node_modules
+      - ${HOME}/.claude:/home/node/.claude:cached
+    ports:
+      - "3060:8080" # dev host port for Account Service API (internal-only component: container port 8080)
+    env_file:
+      - .env
+    working_dir: /workspace
+    command: sleep infinity
+    restart: unless-stopped
+    networks:
+      default:
+      # Shared dev network: other EurekaWorld dev containers reach this API at
+      # http://account-service-api:8080 (or http://ew-account-service-api-dev:8080)
+      ew-dev:
+        aliases: [account-service-api]
+
+volumes:
+  node_modules:
+
+networks:
+  ew-dev:
+    external: true
+    name: ew-dev # created by the devcontainer initializeCommand if missing

@@ -1,0 +1,39 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
+
+// Development reads .env; in ECS every value comes from the task definition
+// (config) or Secrets Manager (secrets), and there is no .env file.
+dotenv.config({ quiet: true });
+
+// package.json sits one level above both src/ (tsx in dev) and dist/ (prod image)
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
+  name: string;
+  version: string;
+};
+
+function intEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  return n;
+}
+
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const gitCommit = (process.env.GIT_COMMIT ?? 'unknown').slice(0, 7);
+
+export const SERVICE_NAME = pkg.name;
+/** `<package version>+<short commit>` in images built by deploy.sh, else just the package version. */
+export const API_VERSION = gitCommit === 'unknown' ? pkg.version : `${pkg.version}+${gitCommit}`;
+
+export const config = {
+  nodeEnv,
+  isProduction: nodeEnv === 'production',
+  // Internal-only component: container port 8080 (Developers Guide: Ports and exposure)
+  port: intEnv('PORT', 8080),
+  logLevel: process.env.LOG_LEVEL ?? (nodeEnv === 'production' ? 'info' : 'debug'),
+  // json = structured (ECS/CloudWatch), pretty = human-readable (dev)
+  logFormat: process.env.LOG_FORMAT ?? (nodeEnv === 'production' ? 'json' : 'pretty'),
+  shutdownTimeoutMs: intEnv('SHUTDOWN_TIMEOUT_MS', 15_000),
+};

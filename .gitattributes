@@ -1,0 +1,25 @@
+# Target OS rule: Linux = eol=lf, Windows = eol=crlf
+* text=auto eol=lf
+
+# Always LF: these run on Linux whatever the repo targets
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Always CRLF: Windows-only scripts and Visual Studio files
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sln text eol=crlf
+
+# Binary files are never converted
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.dll binary
+*.exe binary
