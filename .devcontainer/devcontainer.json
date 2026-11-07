@@ -6,6 +6,10 @@
   "remoteUser": "node",
   "initializeCommand": "docker network inspect ew-dev >/dev/null 2>&1 || docker network create ew-dev; test -f .env || cp .env.example .env",
   "postCreateCommand": "npm install --no-audit --no-fund",
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "account-service-api (npm run dev)", "onAutoForward": "notify" }
+  },
   "customizations": {
     "vscode": {
       "extensions": [

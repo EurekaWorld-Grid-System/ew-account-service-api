@@ -23,7 +23,8 @@ Errors follow the standards' `{ code, message }` shape: `NOT_FOUND` (404), `INVA
 | Where | Address |
 | --- | --- |
 | Container port (dev and prod) | 8080 (internal-only component, non-root) |
-| Dev (browser, Thunder Client, REST Client) | `http://localhost:3060` |
+| Dev, from your workstation via VS Code port forwarding | `http://localhost:8080` (VS Code picks the next free local port if 8080 is taken; see the **Ports** tab) |
+| Dev, Docker server host port | `http://localhost:3060` on the server, or `http://<server>:3060` |
 | Dev, from another container on `ew-dev` | `http://account-service-api:8080` |
 | Prod-check image on the Docker server | `http://localhost:3069` |
 | Production (VPC only) | `http://apiaccounttemp.eurekaworld.internal:8080` via the internal ALB (later `apiaccount.eurekaworld.internal`) |
@@ -34,7 +35,7 @@ On the Linux Docker server (`~/projects/ew-account-service-api`, branch `dev`):
 
 1. Open the folder in VS Code (Remote SSH) → **Reopen in Container**. The first open creates the `ew-dev` network if missing and copies `.env.example` to `.env`.
 2. In the container terminal: `npm run dev` (tsx watch, restarts on save).
-3. Browse `http://localhost:3060/health`, or use `requests.http` / Thunder Client. Nothing listens until `npm run dev` is running (the container itself only runs `sleep infinity`).
+3. Browse `http://localhost:8080/health` on your workstation (forwarded by VS Code; check the **Ports** tab for the actual local port), or use `requests.http` / Thunder Client. Nothing listens until `npm run dev` is running (the container itself only runs `sleep infinity`).
 
 | Script | What it does |
 | --- | --- |
