@@ -54,8 +54,18 @@ describe('pre-flight endpoints', () => {
     expect(legacy.body.code).toBe('USERNAME_ALREADY_IN_USE');
   });
 
-  it('validate-username: one word of [A-Za-z0-9_] only', async () => {
-    for (const username of ['two words', 'dash-ed', 'עברית', '']) {
+  it('validate-username: two-word usernames are checked as that exact grid name', async () => {
+    const s = fakeState();
+    s.gridNames.set('John Smith', 'cccccccc-0000-0000-0000-000000000003');
+    const a = testApp(s);
+    expect((await post(a, '/registration/validate-username', { username: 'John  Smith' })).status).toBe(409);
+    expect((await post(a, '/registration/validate-username', { username: 'John Smyth' })).status).toBe(200);
+    // "John" alone maps to "John EW" / "John Resident", not "John Smith"
+    expect((await post(a, '/registration/validate-username', { username: 'John' })).status).toBe(200);
+  });
+
+  it('validate-username: one or two words of [A-Za-z0-9_], second word not EW/Resident', async () => {
+    for (const username of ['three word name', 'dash-ed', 'עברית', '', 'john EW', 'john resident']) {
       expect((await post(app, '/registration/validate-username', { username })).body.code).toBe('VALIDATION_ERROR');
     }
   });
@@ -82,6 +92,14 @@ describe('POST /registration', () => {
         licenseId: 'lic-1',
       },
     ]);
+  });
+
+  it('a two-word username becomes that grid name (no EW)', async () => {
+    const s = fakeState();
+    const res = await post(testApp(s), '/registration', { ...valid, username: 'John Smith' });
+    expect(res.status).toBe(201);
+    expect(s.robustCalls[0]).toMatchObject({ first: 'John', last: 'Smith' });
+    expect(s.bmsCalls[0].username).toBe('John Smith');
   });
 
   it('email is optional (sent to bms-adapter as null)', async () => {

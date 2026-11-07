@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { conflictingGridNames, gridNameFor, USERNAME_RE } from './gridName';
+import { conflictingGridNames, gridNameFor, isValidUsername } from './gridName';
 import { CouponInfo, RegistrationDeps } from './types';
 
 // Registration backend (EurekaWorld_Account_Service_Design §6). Email verification is
@@ -40,9 +40,13 @@ export function parseEmail(v: unknown): string {
 }
 
 export function parseUsername(v: unknown): string {
-  const s = str(v);
-  if (!s || !USERNAME_RE.test(s)) {
-    throw validationError('username must be one word of 1-64 letters (a-z, A-Z), digits or underscores');
+  // Inner whitespace collapsed to one space ("First   Last" → "First Last")
+  const s = str(v)?.replace(/\s+/g, ' ');
+  if (!s || !isValidUsername(s)) {
+    throw validationError(
+      'username must be one or two words of 1-64 letters (a-z, A-Z), digits or underscores; ' +
+        'a second word may not be "EW" or "Resident"'
+    );
   }
   return s;
 }
