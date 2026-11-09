@@ -15,22 +15,22 @@ Node.js 22 LTS (`node:22-alpine`) + TypeScript + Express 5, helmet, winston logg
 | Method | Path | Behaviour |
 | --- | --- | --- |
 | GET | `/health` | `{ status: "ok", service, version }`. Liveness only (no dependency checks), used by the container health check and the internal ALB target group. No auth. |
-| POST | `/registration/validate-coupon` | `{ couponCode }` → `{ valid: true, licenseId, instituteId }` · 404 `COUPON_NOT_FOUND` |
+| POST | `/registration/validate-coupon` | `{ couponCode }` → `{ valid: true, licenseId, instituteId, instituteName }` · 404 `COUPON_NOT_FOUND` |
 | POST | `/registration/validate-email` | `{ email }` → `{ available: true }` · 409 `EMAIL_ALREADY_IN_USE` |
-| POST | `/registration/validate-username` | `{ username }` → `{ available: true }` · 409 `USERNAME_ALREADY_IN_USE` |
+| POST | `/registration/validate-username` | `{ username }` → `{ available: true }` · 409 `USERNAME_ALREADY_IN_USE` · 400 `INVALID_USERNAME` |
 | POST | `/registration` | `{ couponCode, username, firstName, lastName, email?, password, avatarCode }` → 201 `{ accountId, username }` |
 
 All `/registration*` routes need the caller's `X-Api-Key` (`ACCOUNT_SERVICE_API_KEY`; 401 `INVALID_API_KEY`).
 
-**Registration flow** (`POST /registration`, fail fast): field shapes (400 `VALIDATION_ERROR`) → coupon in `license_index` + `institute_index` → email not in `account_index` (email is optional; verification is the Portal's job) → username not in `account_index`/`user_index` nor taken in the grid (two words → that name; one word → `<username> EW` or legacy `<username> Resident`) → `avatarCode` active in `avatar_index` (400 `INVALID_AVATAR_CODE`) → Robust `POST /api/user/account` with the grid name (two words → `first`/`last`; one word → `first=<username>`, `last=EW`), empty `email`, `avatar=<avatarCode>` (502 `REGISTRATION_FAILED`) → `PrincipalID` from grid `useraccounts` (502 `USER_LOOKUP_FAILED`) → bms-adapter `POST /users` (`X-Registrant-Type: User`; 502 `BMS_REGISTRATION_FAILED`, 504 `BMS_ADAPTER_TIMEOUT`), which creates the BMS user and the `account_index`/`user_index` rows. If bms-adapter reports `indexWriteSucceeded: false`, the response is still 201 with `accountId: null` and the case is logged for reconciliation.
+**Registration flow** (`POST /registration`, fail fast): field shapes (400 `INVALID_USERNAME` for the username, `VALIDATION_ERROR` for the other fields) → coupon in `license_index` + `institute_index` → email not in `account_index` (email is optional; verification is the Portal's job) → username not in `account_index`/`user_index` nor taken in the grid (two words → that name; one word → `<username> EW` or legacy `<username> Resident`) → `avatarCode` active in `avatar_index` (400 `INVALID_AVATAR_CODE`) → Robust `POST /api/user/account` with the grid name (two words → `first`/`last`; one word → `first=<username>`, `last=EW`), empty `email`, `avatar=<avatarCode>` (502 `REGISTRATION_FAILED`) → `PrincipalID` from grid `useraccounts` (502 `USER_LOOKUP_FAILED`) → bms-adapter `POST /users` (`X-Registrant-Type: User`; 502 `BMS_REGISTRATION_FAILED`, 504 `BMS_ADAPTER_TIMEOUT`), which creates the BMS user and the `account_index`/`user_index` rows. If bms-adapter reports `indexWriteSucceeded: false`, the response is still 201 with `accountId: null` and the case is logged for reconciliation.
 
-Rules: username is one or two words of `[A-Za-z0-9_]`, 1–64 characters each (Robust's name rule); a second word may not be `EW` or `Resident` (it would be the one-word username's grid account); password 8–128 characters.
+Rules: username is one or two words of `[A-Za-z0-9_]`, 1–64 characters each (Robust's name rule); a second word may not be `EW` or `Resident` (it would be the one-word username's grid account). Password: the EurekaWorld standard (Registration Wizard Architecture v1.0 §4) — at least 10 characters, at least one English letter and one digit, only `[A-Za-z0-9!@#$%^&*()]` (max 128).
 
 `ROBUST_SKIP=true` (dev only, refused in production) skips Robust and the grid lookup; a random UUID stands in for the PrincipalID and bms-adapter is still called.
 
 Errors follow the standards' `{ code, message }` shape: also `NOT_FOUND` (404), `INVALID_JSON` (400), `PAYLOAD_TOO_LARGE` (413), `INDEX_DB_UNAVAILABLE` / `GRID_DB_UNAVAILABLE` (503), `INTERNAL_ERROR` (500).
 
-Database setup: `db/avatar_index.sql` (new `ew_index.avatar_index` table) and `db/setup.sql` (production DB user, SELECT only).
+Database setup: `db/avatar_index.sql` (new `ew_index.avatar_index` table, including the wizard's picker columns, owned by this service) and `db/setup.sql` (production DB user, SELECT only).
 
 ## Ports and addresses
 

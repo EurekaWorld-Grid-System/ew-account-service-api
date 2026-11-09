@@ -8,8 +8,12 @@ import { CouponInfo, RegistrationDeps } from './types';
 // the Portal's domain: this service only checks that the email is not registered.
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
-export const PASSWORD_MIN = 8;
+// EurekaWorld password standard (Registration Wizard Architecture v1.0 §4, MoE-compliant):
+// at least 10 characters, at least one English letter and one digit, and only
+// English letters, digits and !@#$%^&*(). 128 = upper bound against abuse.
+export const PASSWORD_MIN = 10;
 export const PASSWORD_MAX = 128;
+const PASSWORD_ALLOWED_RE = /^[A-Za-z0-9!@#$%^&*()]+$/;
 
 function validationError(message: string): AppError {
   return new AppError(400, 'VALIDATION_ERROR', message);
@@ -43,7 +47,9 @@ export function parseUsername(v: unknown): string {
   // Inner whitespace collapsed to one space ("First   Last" → "First Last")
   const s = str(v)?.replace(/\s+/g, ' ');
   if (!s || !isValidUsername(s)) {
-    throw validationError(
+    throw new AppError(
+      400,
+      'INVALID_USERNAME',
       'username must be one or two words of 1-64 letters (a-z, A-Z), digits or underscores; ' +
         'a second word may not be "EW" or "Resident"'
     );
@@ -58,9 +64,18 @@ function parseName(field: string, v: unknown): string {
 }
 
 function parsePassword(v: unknown): string {
-  // Not trimmed: spaces are part of the password
-  if (typeof v !== 'string' || v.length < PASSWORD_MIN || v.length > PASSWORD_MAX) {
-    throw validationError(`password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters`);
+  if (
+    typeof v !== 'string' ||
+    v.length < PASSWORD_MIN ||
+    v.length > PASSWORD_MAX ||
+    !PASSWORD_ALLOWED_RE.test(v) ||
+    !/[A-Za-z]/.test(v) ||
+    !/[0-9]/.test(v)
+  ) {
+    throw validationError(
+      `password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters of English letters, digits and !@#$%^&*(), ` +
+        'with at least one letter and one digit'
+    );
   }
   return v;
 }

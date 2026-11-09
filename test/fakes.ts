@@ -27,7 +27,7 @@ export interface FakeState {
 export function fakeState(): FakeState {
   return {
     coupons: {
-      EW12345678X: { licenseId: 'lic-1', instituteId: 'inst-1', organization: 'general' },
+      EW12345678X: { licenseId: 'lic-1', instituteId: 'inst-1', instituteName: 'Test School', organization: 'general' },
     },
     emails: new Set(['taken@example.com']),
     usernames: new Set(['taken']),

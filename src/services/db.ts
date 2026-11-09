@@ -46,7 +46,7 @@ export class MysqlIndexRepository implements IndexRepository {
   async findCoupon(couponCode: string): Promise<CouponInfo | null> {
     // license_index has no active flag: a coupon is valid when it is in the index
     const rows = await this.rows(
-      'SELECT li.license_id, li.institute_id, ii.organization ' +
+      'SELECT li.license_id, li.institute_id, ii.name, ii.organization ' +
         'FROM license_index li JOIN institute_index ii ON ii.institute_id = li.institute_id ' +
         'WHERE li.coupon_code = ? LIMIT 1',
       [couponCode]
@@ -56,6 +56,7 @@ export class MysqlIndexRepository implements IndexRepository {
     return {
       licenseId: String(r.license_id),
       instituteId: String(r.institute_id),
+      instituteName: String(r.name),
       organization: String(r.organization) as Organization,
     };
   }

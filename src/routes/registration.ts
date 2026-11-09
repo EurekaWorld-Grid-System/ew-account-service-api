@@ -20,7 +20,7 @@ export function createRegistrationRouter(apiKey: string, deps: RegistrationDeps)
 
   router.post('/registration/validate-coupon', async (req, res) => {
     const coupon = await checkCoupon(deps, parseCouponCode(body(req.body).couponCode));
-    res.json({ valid: true, licenseId: coupon.licenseId, instituteId: coupon.instituteId });
+    res.json({ valid: true, licenseId: coupon.licenseId, instituteId: coupon.instituteId, instituteName: coupon.instituteName });
   });
 
   router.post('/registration/validate-email', async (req, res) => {

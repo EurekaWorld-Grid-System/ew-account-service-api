@@ -6,6 +6,7 @@ export type Organization = 'edu' | 'general';
 export interface CouponInfo {
   licenseId: string;
   instituteId: string;
+  instituteName: string;
   organization: Organization;
 }
 

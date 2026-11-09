@@ -9,7 +9,7 @@ const valid = {
   firstName: 'John',
   lastName: 'Smith',
   email: 'John@Example.com',
-  password: 'secret123',
+  password: 'Secret1234!',
   avatarCode: 'Glen',
 };
 
@@ -32,7 +32,7 @@ describe('pre-flight endpoints', () => {
   it('validate-coupon: 200 with license and institute, 404 when unknown', async () => {
     const ok = await post(app, '/registration/validate-coupon', { couponCode: ' EW12345678X ' });
     expect(ok.status).toBe(200);
-    expect(ok.body).toEqual({ valid: true, licenseId: 'lic-1', instituteId: 'inst-1' });
+    expect(ok.body).toEqual({ valid: true, licenseId: 'lic-1', instituteId: 'inst-1', instituteName: 'Test School' });
     const bad = await post(app, '/registration/validate-coupon', { couponCode: 'NOPE' });
     expect(bad.status).toBe(404);
     expect(bad.body.code).toBe('COUPON_NOT_FOUND');
@@ -66,7 +66,7 @@ describe('pre-flight endpoints', () => {
 
   it('validate-username: one or two words of [A-Za-z0-9_], second word not EW/Resident', async () => {
     for (const username of ['three word name', 'dash-ed', 'עברית', '', 'john EW', 'john resident']) {
-      expect((await post(app, '/registration/validate-username', { username })).body.code).toBe('VALIDATION_ERROR');
+      expect((await post(app, '/registration/validate-username', { username })).body.code).toBe('INVALID_USERNAME');
     }
   });
 });
@@ -78,7 +78,7 @@ describe('POST /registration', () => {
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ accountId: 'acc-1', username: 'jsmith' });
 
-    expect(s.robustCalls).toEqual([{ first: 'jsmith', last: 'EW', password: 'secret123', avatar: 'Glen' }]);
+    expect(s.robustCalls).toEqual([{ first: 'jsmith', last: 'EW', password: 'Secret1234!', avatar: 'Glen' }]);
     expect(s.bmsCalls).toEqual([
       {
         organization: 'general',
@@ -86,7 +86,7 @@ describe('POST /registration', () => {
         username: 'jsmith',
         firstName: 'John',
         lastName: 'Smith',
-        password: 'secret123',
+        password: 'Secret1234!',
         email: 'john@example.com',
         openSimUserId: 'bbbbbbbb-0000-0000-0000-000000000002',
         licenseId: 'lic-1',
@@ -111,7 +111,12 @@ describe('POST /registration', () => {
 
   it('fails fast in order, before Robust is called', async () => {
     const cases: [Record<string, unknown>, number, string][] = [
-      [{ password: 'short' }, 400, 'VALIDATION_ERROR'],
+      [{ password: 'short1' }, 400, 'VALIDATION_ERROR'],
+      [{ password: 'onlyletters' }, 400, 'VALIDATION_ERROR'],
+      [{ password: '1234567890' }, 400, 'VALIDATION_ERROR'],
+      [{ password: 'Secret1234~' }, 400, 'VALIDATION_ERROR'],
+      [{ password: 'Secret 1234' }, 400, 'VALIDATION_ERROR'],
+      [{ username: 'john EW' }, 400, 'INVALID_USERNAME'],
       [{ couponCode: 'NOPE' }, 404, 'COUPON_NOT_FOUND'],
       [{ email: 'taken@example.com' }, 409, 'EMAIL_ALREADY_IN_USE'],
       [{ username: 'oldtimer' }, 409, 'USERNAME_ALREADY_IN_USE'],

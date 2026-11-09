@@ -40,6 +40,6 @@ Content-Type: application/json
   "firstName": "Test",
   "lastName": "User",
   "email": "someone@example.com",
-  "password": "change-me-123",
+  "password": "Change1234!",
   "avatarCode": "Glen"
 }
