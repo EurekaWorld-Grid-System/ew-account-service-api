@@ -8,8 +8,29 @@ import { RobustClient, RobustCreateAccount } from './types';
 // avatar is the alias Robust maps to a template avatar user (Robust's domain).
 
 interface ActionResult {
-  IsOK?: boolean;
-  ErrorMessage?: string | null;
+  isOk: boolean | null;
+  errorMessage: string | null;
+}
+
+/** Robust's OSDMap JSON, read with case-insensitive keys; null when the body isn't a JSON object. */
+export function parseActionResult(text: string): ActionResult | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const get = (key: string): unknown => {
+    const k = Object.keys(parsed as object).find(x => x.toLowerCase() === key);
+    return k === undefined ? undefined : (parsed as Record<string, unknown>)[k];
+  };
+  const ok = get('isok');
+  const msg = get('errormessage');
+  return {
+    isOk: typeof ok === 'boolean' ? ok : typeof ok === 'string' ? ok.toLowerCase() === 'true' : null,
+    errorMessage: typeof msg === 'string' && msg !== '' ? msg : null,
+  };
 }
 
 export class HttpRobustClient implements RobustClient {
@@ -46,20 +67,25 @@ export class HttpRobustClient implements RobustClient {
       throw new AppError(502, 'REGISTRATION_FAILED', 'Grid account creation failed');
     }
 
-    let result: ActionResult | null = null;
+    let text = '';
     try {
-      result = (await res.json()) as ActionResult;
+      text = await res.text();
     } catch {
-      result = null;
+      text = '';
     }
+    const result = parseActionResult(text);
 
-    if (!res.ok || result?.IsOK !== true) {
-      // Robust's message is logged, never forwarded to the caller (design §6.4)
+    if (!res.ok || result?.isOk !== true) {
+      // Robust's message is logged, never forwarded to the caller (design §6.4).
+      // When the body isn't Robust's JSON result (e.g. wrong port/path), log what came back.
       logger.error('Robust rejected account creation', {
         first: req.first,
         last: req.last,
+        url: `${this.baseUrl}/api/user/account`,
         status: res.status,
-        robustError: result?.ErrorMessage ?? null,
+        contentType: res.headers.get('content-type'),
+        robustError: result?.errorMessage ?? null,
+        ...(result ? {} : { body: text.slice(0, 500) }),
       });
       throw new AppError(502, 'REGISTRATION_FAILED', 'Grid account creation failed');
     }
