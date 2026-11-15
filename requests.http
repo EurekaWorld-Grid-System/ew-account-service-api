@@ -4,6 +4,8 @@
 @base = http://localhost:3060
 # = ACCOUNT_SERVICE_API_KEY in .env
 @key = change-me
+# A user access token from ew-portal-api (dev), for /account/*
+@token = paste-an-access-token
 
 ### Health
 GET {{base}}/health
@@ -43,3 +45,11 @@ Content-Type: application/json
   "password": "Change1234!",
   "avatarCode": "Glen"
 }
+
+### Change password (user's access token from ew-portal-api)
+POST {{base}}/account/change-password
+X-Api-Key: {{key}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "oldPassword": "Change1234!", "newPassword": "Change5678!" }

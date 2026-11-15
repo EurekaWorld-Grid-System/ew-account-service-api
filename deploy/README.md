@@ -99,6 +99,24 @@ curl -s -X POST http://apiaccounttemp.eurekaworld.internal:8080/registration/val
 # {"available":true}  → ew_index and grid DB access work
 ```
 
+## Password change setup (0.3.0, once)
+
+`POST /account/change-password` verifies the user's access token with the RS256 public key of the key
+pair ew-portal-api signs with (Pre-Launch Security Design §4.4), and syncs the grid password through the
+registration Robust (`ROBUST_BASE_URL`, `POST /api/password/<PrincipalID>`). No new database grants: it
+reads `ew_index.user_index` and `<grid DB>.useraccounts`, which 0.2.0 already has.
+
+```bash
+source deploy/config.env
+# Same PEM as ew-portal-api's production JWT_PUBLIC_KEY (a public key, kept in Secrets Manager for
+# consistency with the other values and for multi-line safety)
+aws secretsmanager create-secret --region $R --name $APP/jwt-public-key \
+  --secret-string file://<path to the production public key .pem> --query ARN --output text
+```
+
+Put the ARN into `config.env` as `JWT_PUBLIC_KEY_SECRET` and commit. The execution role's
+`$APP-secrets` policy already covers `$APP/*`.
+
 ## Redeploy
 
 ```bash

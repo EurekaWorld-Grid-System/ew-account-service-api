@@ -18,6 +18,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/** A PEM from the environment; accepts literal "\\n" sequences (single-line .env / secret values). */
+function pemEnv(name: string): string {
+  const pem = requireEnv(name).replace(/\\n/g, '\n').trim();
+  if (!pem.startsWith('-----BEGIN ')) throw new Error(`${name} must be a PEM (-----BEGIN ...)`);
+  return pem + '\n';
+}
+
 function boolEnv(name: string): boolean {
   return (process.env[name] ?? '').trim().toLowerCase() === 'true';
 }
@@ -63,6 +70,8 @@ export interface DbConfig {
 export interface RegistrationConfig {
   // Key callers (ew-portal-api) present in X-Api-Key (secret)
   apiKey: string;
+  // RS256 public key (PEM) that verifies users' access tokens
+  jwtPublicKey: string;
   db: DbConfig;
   robustBaseUrl: string;
   robustTimeoutMs: number;
@@ -80,6 +89,7 @@ export function loadRegistrationConfig(): RegistrationConfig {
   const withScheme = (url: string) => (/^https?:\/\//i.test(url) ? url : `http://${url}`).replace(/\/+$/, '');
   return {
     apiKey: requireEnv('ACCOUNT_SERVICE_API_KEY'),
+    jwtPublicKey: pemEnv('JWT_PUBLIC_KEY'),
     db: {
       host: requireEnv('AURORA_HOST'),
       port: intEnv('AURORA_PORT', 3306),

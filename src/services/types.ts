@@ -17,6 +17,8 @@ export interface IndexRepository {
   /** account_index.username or user_index.username */
   usernameExists(username: string): Promise<boolean>;
   avatarCodeExists(avatarCode: string): Promise<boolean>;
+  /** user_index.open_sim_user_id of a BMS user (null when the row or the value is missing). */
+  findOpenSimUserId(bmsUserId: string): Promise<string | null>;
 }
 
 /** OpenSim grid DB (SELECT only on useraccounts). */
@@ -25,6 +27,8 @@ export interface GridRepository {
   nameExists(names: GridName[]): Promise<boolean>;
   /** PrincipalID of the account with exactly this name, or null. */
   findPrincipalId(name: GridName): Promise<string | null>;
+  /** True when a grid account with this PrincipalID exists. */
+  principalExists(principalId: string): Promise<boolean>;
 }
 
 export interface GridName {
@@ -42,6 +46,8 @@ export interface RobustCreateAccount {
 export interface RobustClient {
   /** Resolves on IsOK: true; throws AppError(502 REGISTRATION_FAILED) otherwise. */
   createAccount(req: RobustCreateAccount): Promise<void>;
+  /** Robust POST /api/password/<principalId>. Throws AppError(502 GRID_PASSWORD_SYNC_FAILED) on failure. */
+  setPassword(principalId: string, password: string): Promise<void>;
 }
 
 export interface BmsCreateUser {
@@ -66,6 +72,30 @@ export interface BmsCreatedUser {
 export interface BmsAdapterClient {
   /** bms-adapter POST /users (X-Registrant-Type: User). Throws AppError(502/504) on failure. */
   createUser(req: BmsCreateUser): Promise<BmsCreatedUser>;
+  /** GET /users/{id}/credentials → the stored hash and salt. null when the user doesn't exist. */
+  getCredentials(user: BmsUserRef): Promise<{ hashCode: string; salt: string } | null>;
+  /** POST /users/compute-hash: the BMS hash of a password with the given salt. */
+  computeHash(password: string, salt: string): Promise<string>;
+  /** POST /users/{id}/password/validate: false when the password is in the user's recent history. */
+  isPasswordAllowed(user: BmsUserRef, newPassword: string): Promise<boolean>;
+  /** PUT /users/{id}/password { newPassword, isInitial: false }. Throws AppError(400 PASSWORD_RECENTLY_USED) on reuse. */
+  setPassword(user: BmsUserRef, newPassword: string): Promise<void>;
+}
+
+/** A BMS user as identified by an access token: bms-adapter needs X-Organization and X-Institute-Id. */
+export interface BmsUserRef {
+  userId: string;
+  organization: Organization;
+  instituteId: string;
+}
+
+export interface PasswordChangeDeps {
+  index: IndexRepository;
+  grid: GridRepository;
+  robust: RobustClient;
+  bms: BmsAdapterClient;
+  /** ROBUST_SKIP=true: the grid password is not synced (dev only). */
+  robustSkip: boolean;
 }
 
 export interface RegistrationDeps {

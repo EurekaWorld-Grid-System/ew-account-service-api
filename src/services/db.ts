@@ -76,6 +76,12 @@ export class MysqlIndexRepository implements IndexRepository {
     return rows.length > 0;
   }
 
+  async findOpenSimUserId(bmsUserId: string): Promise<string | null> {
+    const rows = await this.rows('SELECT open_sim_user_id FROM user_index WHERE user_id = ? LIMIT 1', [bmsUserId]);
+    const v = rows[0]?.open_sim_user_id;
+    return v ? String(v) : null;
+  }
+
   async avatarCodeExists(avatarCode: string): Promise<boolean> {
     const rows = await this.rows('SELECT 1 FROM avatar_index WHERE avatar_code = ? AND is_active = TRUE LIMIT 1', [
       avatarCode,
@@ -106,6 +112,11 @@ export class MysqlGridRepository implements GridRepository {
       `SELECT 1 FROM useraccounts WHERE ${where} LIMIT 1`,
       names.flatMap(n => [n.firstName, n.lastName])
     );
+    return rows.length > 0;
+  }
+
+  async principalExists(principalId: string): Promise<boolean> {
+    const rows = await this.rows('SELECT 1 FROM useraccounts WHERE PrincipalID = ? LIMIT 1', [principalId]);
     return rows.length > 0;
   }
 

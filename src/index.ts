@@ -10,6 +10,7 @@ const dbs = createDatabases(reg.db);
 
 const app = createApp({
   apiKey: reg.apiKey,
+  jwtPublicKey: reg.jwtPublicKey,
   registration: {
     index: dbs.index,
     grid: dbs.grid,

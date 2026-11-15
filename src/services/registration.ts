@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { parsePassword } from '../utils/password';
 import { conflictingGridNames, gridNameFor, isValidUsername } from './gridName';
 import { CouponInfo, RegistrationDeps } from './types';
 
@@ -8,13 +9,6 @@ import { CouponInfo, RegistrationDeps } from './types';
 // the Portal's domain: this service only checks that the email is not registered.
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
-// EurekaWorld password standard (Registration Wizard Architecture v1.0 §4, MoE-compliant):
-// at least 10 characters, at least one English letter and one digit, and only
-// English letters, digits and !@#$%^&*(). 128 = upper bound against abuse.
-export const PASSWORD_MIN = 10;
-export const PASSWORD_MAX = 128;
-const PASSWORD_ALLOWED_RE = /^[A-Za-z0-9!@#$%^&*()]+$/;
-
 function validationError(message: string): AppError {
   return new AppError(400, 'VALIDATION_ERROR', message);
 }
@@ -61,23 +55,6 @@ function parseName(field: string, v: unknown): string {
   const s = str(v);
   if (!s || s.length > 100) throw validationError(`${field} is required (max 100 characters)`);
   return s;
-}
-
-function parsePassword(v: unknown): string {
-  if (
-    typeof v !== 'string' ||
-    v.length < PASSWORD_MIN ||
-    v.length > PASSWORD_MAX ||
-    !PASSWORD_ALLOWED_RE.test(v) ||
-    !/[A-Za-z]/.test(v) ||
-    !/[0-9]/.test(v)
-  ) {
-    throw validationError(
-      `password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters of English letters, digits and !@#$%^&*(), ` +
-        'with at least one letter and one digit'
-    );
-  }
-  return v;
 }
 
 function parseAvatarCode(v: unknown): string {
