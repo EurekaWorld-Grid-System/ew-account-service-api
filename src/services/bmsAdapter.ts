@@ -110,7 +110,7 @@ export class HttpBmsAdapterClient implements BmsAdapterClient {
     };
   }
 
-  // ── Password change (Pre-Launch Security Design §1; same calls ew-portal-api made) ──
+  // ── Passwords (Pre-Launch Security Design §1; the same calls ew-portal-api makes) ──
   async getCredentials(user: BmsUserRef): Promise<{ hashCode: string; salt: string } | null> {
     const reply = await this.request<{ hashCode?: string; salt?: string }>(
       'GET',
@@ -150,12 +150,12 @@ export class HttpBmsAdapterClient implements BmsAdapterClient {
     throw this.fail('validatePassword', reply, 'BMS_ADAPTER_UNAVAILABLE', { userId: user.userId });
   }
 
-  async setPassword(user: BmsUserRef, newPassword: string): Promise<void> {
+  async setPassword(user: BmsUserRef, newPassword: string, isInitial: boolean): Promise<void> {
     const reply = await this.request<unknown>('PUT', `/users/${encodeURIComponent(user.userId)}/password`, {
       op: 'setPassword',
       failCode: 'BMS_ADAPTER_UNAVAILABLE',
       user,
-      body: { newPassword, isInitial: false },
+      body: { newPassword, isInitial },
     });
     if (reply.status === 200 && reply.body?.success) return;
     if (reply.status === 400 && isReuseCode(reply.body?.code ?? reply.body?.errorCode)) {

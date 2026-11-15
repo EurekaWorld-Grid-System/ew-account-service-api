@@ -1,5 +1,3 @@
-import crypto from 'node:crypto';
-import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app';
 import { AppError } from '../src/utils/errors';
 import {
@@ -7,11 +5,14 @@ import {
   BmsCreateUser,
   CouponInfo,
   GridName,
+  IndexedUser,
   RegistrationDeps,
   RobustCreateAccount,
 } from '../src/services/types';
 
 export const API_KEY = 'test-key';
+export const USER = '11111111-1111-4111-8111-111111111111';
+export const ADMIN = '22222222-2222-4222-8222-222222222222';
 
 export interface FakeState {
   coupons: Record<string, CouponInfo>;
@@ -24,11 +25,12 @@ export interface FakeState {
   robustFails: boolean;
   robustCreatesRow: boolean;
   bmsResult: BmsCreatedUser | AppError;
-  // Password change
-  openSimUserIds: Map<string, string>; // BMS userId -> open_sim_user_id
+  // Passwords
+  users: Map<string, IndexedUser>; // BMS userId -> user_index row
   credentials: Map<string, { password: string; salt: string }>; // BMS userId -> current password
+  serviceTokens: { tokenId: string; action: string; subjectUserId: string }[];
   recentPasswords: Set<string>;
-  passwordSets: { userId: string; newPassword: string }[];
+  passwordSets: { userId: string; newPassword: string; isInitial: boolean }[];
   gridPasswordSets: { principalId: string; password: string }[];
   robustPasswordFails: boolean;
 }
@@ -47,8 +49,27 @@ export function fakeState(): FakeState {
     robustFails: false,
     robustCreatesRow: true,
     bmsResult: { userId: 'bms-user-1', username: 'jsmith', accountId: 'acc-1', indexWriteSucceeded: true },
-    openSimUserIds: new Map([['bms-user-9', 'aaaaaaaa-0000-0000-0000-000000000001']]),
-    credentials: new Map([['bms-user-9', { password: 'OldPassw0rd1', salt: 's9' }]]),
+    users: new Map(
+      [
+        [USER, 'jdoe', 'acc-9', 'aaaaaaaa-0000-0000-0000-000000000001'],
+        [ADMIN, 'boss', 'acc-1', null],
+      ].map(([userId, username, accountId, openSimUserId]) => [
+        userId as string,
+        {
+          userId: userId as string,
+          username: username as string,
+          accountId: accountId as string,
+          instituteId: 'inst-1',
+          organization: 'general' as const,
+          openSimUserId: openSimUserId as string | null,
+        },
+      ])
+    ),
+    credentials: new Map([
+      [USER, { password: 'OldPassw0rd1', salt: 's9' }],
+      [ADMIN, { password: 'AdminPassw0rd', salt: 's1' }],
+    ]),
+    serviceTokens: [],
     recentPasswords: new Set(['Recent12345']),
     passwordSets: [],
     gridPasswordSets: [],
@@ -66,7 +87,13 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
       emailExists: async e => s.emails.has(e),
       usernameExists: async u => s.usernames.has(u),
       avatarCodeExists: async a => s.avatars.has(a),
-      findOpenSimUserId: async id => s.openSimUserIds.get(id) ?? null,
+      findUser: async id => s.users.get(id) ?? null,
+      consumeServiceToken: async (tokenId, action, subjectUserId) => {
+        const i = s.serviceTokens.findIndex(t => t.tokenId === tokenId && t.action === action && t.subjectUserId === subjectUserId);
+        if (i < 0) return false;
+        s.serviceTokens.splice(i, 1);
+        return true;
+      },
     },
     grid: {
       nameExists: async names => names.some(n => s.gridNames.has(key(n))),
@@ -97,38 +124,13 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
       },
       computeHash: async (password, salt) => `h(${password}:${salt})`,
       isPasswordAllowed: async (_u, p) => !s.recentPasswords.has(p),
-      setPassword: async (u, newPassword) => {
-        s.passwordSets.push({ userId: u.userId, newPassword });
+      setPassword: async (u, newPassword, isInitial) => {
+        s.passwordSets.push({ userId: u.userId, newPassword, isInitial });
       },
     },
   };
 }
 
-// Test RS256 key pair, standing in for the shared ew-portal-api key pair
-export const keys = crypto.generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-  publicKeyEncoding: { type: 'spki', format: 'pem' },
-  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-});
-
-/** An ew-portal-api-style access token (claims as in its JwtPayload). */
-export function accessToken(claims: Record<string, unknown> = {}, opts: jwt.SignOptions = { expiresIn: '15m' }): string {
-  return jwt.sign(
-    {
-      sub: 'bms-user-9',
-      accountId: 'acc-9',
-      username: 'jdoe',
-      globalRole: 'user',
-      organization: 'general',
-      instituteId: 'inst-1',
-      isInitial: false,
-      ...claims,
-    },
-    keys.privateKey,
-    { algorithm: 'RS256', ...opts }
-  );
-}
-
 export function testApp(s: FakeState = fakeState(), robustSkip = false) {
-  return createApp({ apiKey: API_KEY, jwtPublicKey: keys.publicKey, registration: fakeDeps(s, robustSkip) });
+  return createApp({ apiKey: API_KEY, registration: fakeDeps(s, robustSkip) });
 }

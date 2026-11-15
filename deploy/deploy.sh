@@ -58,7 +58,6 @@ sed -e "s|__APP__|$APP|g" \
     -e "s|__ACCOUNT_SERVICE_API_KEY_SECRET__|$ACCOUNT_SERVICE_API_KEY_SECRET|g" \
     -e "s|__AURORA_PASSWORD_SECRET__|$AURORA_PASSWORD_SECRET|g" \
     -e "s|__BMS_ADAPTER_API_KEY_SECRET__|$BMS_ADAPTER_API_KEY_SECRET|g" \
-    -e "s|__JWT_PUBLIC_KEY_SECRET__|$JWT_PUBLIC_KEY_SECRET|g" \
     -e "s|__LOG_GROUP__|$LOG_GROUP|g" \
     -e "s|__R__|$R|g" \
     "$DIR/task-definition.json" > "$TASKDEF"

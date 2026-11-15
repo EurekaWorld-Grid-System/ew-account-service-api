@@ -19,7 +19,8 @@ Node.js 22 LTS (`node:22-alpine`) + TypeScript + Express 5, helmet, winston logg
 | POST | `/registration/validate-email` | `{ email }` → `{ available: true }` · 409 `EMAIL_ALREADY_IN_USE` |
 | POST | `/registration/validate-username` | `{ username }` → `{ available: true }` · 409 `USERNAME_ALREADY_IN_USE` · 400 `INVALID_USERNAME` |
 | POST | `/registration` | `{ couponCode, username, firstName, lastName, email?, password, avatarCode }` → 201 `{ accountId, username }` |
-| POST | `/account/change-password` | `X-Api-Key` **and** `Authorization: Bearer <access token>`; `{ oldPassword, newPassword }` → 200 `{ status: "password_changed", gridSync: "ok" \| "failed" \| "skipped", code? }` |
+| PUT | `/users/:userId/password` | `{ actingUserId, actingUserPassword, newPassword, isInitial? }` → 200 `{ status: "password_changed", gridSync: "ok" \| "failed" \| "skipped", code? }` |
+| POST | `/users/:userId/password/reset` | Header `X-Service-Token` (`system:set-password`); `{ newPassword }` → same 200 response |
 
 All `/registration*` routes need the caller's `X-Api-Key` (`ACCOUNT_SERVICE_API_KEY`; 401 `INVALID_API_KEY`).
 
@@ -31,7 +32,12 @@ Rules: username is one or two words of `[A-Za-z0-9_]`, 1–64 characters each (R
 
 Errors follow the standards' `{ code, message }` shape: also `NOT_FOUND` (404), `INVALID_JSON` (400), `PAYLOAD_TOO_LARGE` (413), `INDEX_DB_UNAVAILABLE` / `GRID_DB_UNAVAILABLE` (503), `INTERNAL_ERROR` (500).
 
-**Password change** (`POST /account/change-password`, Pre-Launch Security Design §1): the caller (ew-portal-api) forwards the user's access token, verified here with `JWT_PUBLIC_KEY` (RS256; 401 `TOKEN_EXPIRED` / `TOKEN_INVALID`; tokens with a `type` claim, e.g. refresh tokens, are rejected). Steps: `newPassword` meets the password standard and differs from `oldPassword` (400 `VALIDATION_ERROR`) → current password checked against the BMS hash (bms-adapter `GET /users/{id}/credentials` + `POST /users/compute-hash`; 401 `WRONG_CURRENT_PASSWORD`, 404 `USER_NOT_FOUND`) → password history (`POST /users/{id}/password/validate`; 400 `PASSWORD_RECENTLY_USED`) → new BMS password (`PUT /users/{id}/password`, `isInitial: false`) → grid password through the registration Robust (`POST /api/password/<PrincipalID>`, PrincipalID = `user_index.open_sim_user_id`, called only when that grid account exists). If the grid step fails, BMS has already changed: the response is still 200 with `gridSync: "failed"` and `code: "GRID_PASSWORD_SYNC_FAILED"`, and the case is logged for manual repair. `ROBUST_SKIP` → `gridSync: "skipped"`. bms-adapter outages: 502 `BMS_ADAPTER_UNAVAILABLE`, 504 `BMS_ADAPTER_TIMEOUT`.
+**Passwords** (Pre-Launch Security Design §1; all password authentication moves here). `:userId` is the BMS `Users.UserId` (`user_index.user_id`); both routes need the caller's `X-Api-Key`.
+
+- `PUT /users/:userId/password`: every change except forgot-password (own change, admin, teacher). The acting user (may be the user themself) proves their **current** BMS password, whatever its state (initial or expired), with bms-adapter `GET /users/{id}/credentials` + `POST /users/compute-hash` (logic copied from ew-portal-api): 401 `INVALID_ACTING_USER_PASSWORD`. `isInitial` (default false) marks an admin/teacher-set password. On an own change, `newPassword` must differ from the current one. Future: rules on who may change whose password.
+- `POST /users/:userId/password/reset`: forgot-password. ew-portal-api authenticates the user (emailed code), mints a one-time `system:set-password` token for this user (`mint_service_action_token('system:set-password', userId, userId)`) and sends it as `X-Service-Token`. The token is consumed (deleted) first; missing, expired, reused or for another user/action: 403 `INVALID_SERVICE_TOKEN`.
+
+Both then: `newPassword` meets the password standard (400 `VALIDATION_ERROR`) → password history (`POST /users/{id}/password/validate`; 400 `PASSWORD_RECENTLY_USED`) → BMS password (`PUT /users/{id}/password`) → grid password through the registration Robust (`POST /api/password/<PrincipalID>`, PrincipalID = `user_index.open_sim_user_id`, called only when that grid account exists in `useraccounts`). If the grid step fails, BMS has already changed: still 200 with `gridSync: "failed"` and `code: "GRID_PASSWORD_SYNC_FAILED"`, logged for manual repair. `ROBUST_SKIP` → `gridSync: "skipped"`. Other errors: 404 `USER_NOT_FOUND`, 502 `BMS_ADAPTER_UNAVAILABLE`, 504 `BMS_ADAPTER_TIMEOUT`, 503 `INDEX_DB_UNAVAILABLE` / `GRID_DB_UNAVAILABLE`.
 
 Database setup: `db/avatar_index.sql` (new `ew_index.avatar_index` table, including the wizard's picker columns, owned by this service) and `db/setup.sql` (production DB user, SELECT only).
 

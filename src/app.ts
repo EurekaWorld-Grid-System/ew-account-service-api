@@ -5,13 +5,11 @@ import { API_VERSION, SERVICE_NAME } from './config';
 import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { createRegistrationRouter } from './routes/registration';
-import { createAccountRouter } from './routes/account';
+import { createUsersRouter } from './routes/users';
 import { RegistrationDeps } from './services/types';
 
 export interface AppOptions {
   apiKey: string;
-  /** RS256 public key that verifies users' access tokens (PEM) */
-  jwtPublicKey: string;
   /** Registration and password change share the same repositories and clients */
   registration: RegistrationDeps;
 }
@@ -43,7 +41,7 @@ export function createApp(opts: AppOptions): Express {
 
   // ── Routes ───────────────────────────────────────────────────────────────────
   app.use(createRegistrationRouter(opts.apiKey, opts.registration));
-  app.use(createAccountRouter(opts.apiKey, opts.jwtPublicKey, opts.registration));
+  app.use(createUsersRouter(opts.apiKey, opts.registration));
 
   app.use(notFound);
   app.use(errorHandler);

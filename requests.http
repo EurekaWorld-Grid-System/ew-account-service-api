@@ -4,8 +4,8 @@
 @base = http://localhost:3060
 # = ACCOUNT_SERVICE_API_KEY in .env
 @key = change-me
-# A user access token from ew-portal-api (dev), for /account/*
-@token = paste-an-access-token
+# BMS Users.UserId (user_index.user_id) of a test user
+@userId = 00000000-0000-0000-0000-000000000000
 
 ### Health
 GET {{base}}/health
@@ -46,10 +46,17 @@ Content-Type: application/json
   "avatarCode": "Glen"
 }
 
-### Change password (user's access token from ew-portal-api)
-POST {{base}}/account/change-password
+### Change password (own change: acting user = the user; or an admin/teacher with isInitial)
+PUT {{base}}/users/{{userId}}/password
 X-Api-Key: {{key}}
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{ "oldPassword": "Change1234!", "newPassword": "Change5678!" }
+{ "actingUserId": "{{userId}}", "actingUserPassword": "Change1234!", "newPassword": "Change5678!" }
+
+### Forgot-password reset (needs a fresh token: CALL dev_ew_index.mint_service_action_token('system:set-password', '<userId>', '<userId>'), valid 30 s)
+POST {{base}}/users/{{userId}}/password/reset
+X-Api-Key: {{key}}
+X-Service-Token: paste-the-token-id
+Content-Type: application/json
+
+{ "newPassword": "Change9012!" }

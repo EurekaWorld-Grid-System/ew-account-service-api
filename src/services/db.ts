@@ -1,8 +1,8 @@
-import mysql, { Pool, RowDataPacket } from 'mysql2/promise';
+import mysql, { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { DbConfig } from '../config';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { CouponInfo, GridName, GridRepository, IndexRepository, Organization } from './types';
+import { CouponInfo, GridName, GridRepository, IndexedUser, IndexRepository, Organization } from './types';
 
 // Two pools on the same Aurora cluster and database user (SELECT only), different
 // databases: ew_index and the OpenSim grid DB (design §4).
@@ -76,10 +76,39 @@ export class MysqlIndexRepository implements IndexRepository {
     return rows.length > 0;
   }
 
-  async findOpenSimUserId(bmsUserId: string): Promise<string | null> {
-    const rows = await this.rows('SELECT open_sim_user_id FROM user_index WHERE user_id = ? LIMIT 1', [bmsUserId]);
-    const v = rows[0]?.open_sim_user_id;
-    return v ? String(v) : null;
+  async findUser(bmsUserId: string): Promise<IndexedUser | null> {
+    const rows = await this.rows(
+      'SELECT ui.user_id, ui.username, ui.account_id, ui.institute_id, ui.open_sim_user_id, ii.organization ' +
+        'FROM user_index ui JOIN institute_index ii ON ii.institute_id = ui.institute_id ' +
+        'WHERE ui.user_id = ? LIMIT 1',
+      [bmsUserId]
+    );
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return {
+      userId: String(r.user_id),
+      username: String(r.username),
+      accountId: String(r.account_id),
+      instituteId: String(r.institute_id),
+      organization: String(r.organization) as Organization,
+      openSimUserId: r.open_sim_user_id ? String(r.open_sim_user_id) : null,
+    };
+  }
+
+  async consumeServiceToken(tokenId: string, action: string, subjectUserId: string): Promise<boolean> {
+    // Same one-time semantics as ew-portal-api: a single DELETE that only matches a live token
+    try {
+      const [result] = await this.pool.execute<ResultSetHeader>({
+        sql:
+          'DELETE FROM service_action_tokens ' +
+          'WHERE token_id = ? AND action = ? AND subject_user_id = ? AND expires_at > UTC_TIMESTAMP()',
+        values: [tokenId, action, subjectUserId],
+        timeout: this.timeoutMs,
+      });
+      return result.affectedRows === 1;
+    } catch (err) {
+      throw dbFailure('INDEX_DB_UNAVAILABLE', err);
+    }
   }
 
   async avatarCodeExists(avatarCode: string): Promise<boolean> {

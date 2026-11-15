@@ -1,7 +1,8 @@
 -- ── ew-account-service-api: production database user (high access level) ───
 -- Run ONCE in production, as the Aurora admin user, at the 0.2.0 production setup
--- (deploy/README.md "Registration setup"). The v1.0 account service only READS;
--- account_index/user_index rows are written by bms-adapter POST /users.
+-- (deploy/README.md "Registration setup"). The account service only READS ew_index, except
+-- consuming (deleting) service action tokens; account_index/user_index rows are written by
+-- bms-adapter POST /users.
 --   ew_index: account_index, user_index, license_index, institute_index, avatar_index
 --   grid DB:  useraccounts
 -- Create avatar_index first (db/avatar_index.sql). Replace <GRID_DB> with the
@@ -18,6 +19,8 @@ GRANT SELECT ON `ew_index`.`user_index`      TO 'account_service_api'@'172.31.%'
 GRANT SELECT ON `ew_index`.`license_index`   TO 'account_service_api'@'172.31.%';
 GRANT SELECT ON `ew_index`.`institute_index` TO 'account_service_api'@'172.31.%';
 GRANT SELECT ON `ew_index`.`avatar_index`    TO 'account_service_api'@'172.31.%';
+-- 0.3.0: consume one-time service action tokens (system:set-password)
+GRANT SELECT, DELETE ON `ew_index`.`service_action_tokens` TO 'account_service_api'@'172.31.%';
 
 GRANT SELECT ON `<GRID_DB>`.`useraccounts`   TO 'account_service_api'@'172.31.%';
 

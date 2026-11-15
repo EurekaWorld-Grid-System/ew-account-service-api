@@ -17,8 +17,20 @@ export interface IndexRepository {
   /** account_index.username or user_index.username */
   usernameExists(username: string): Promise<boolean>;
   avatarCodeExists(avatarCode: string): Promise<boolean>;
-  /** user_index.open_sim_user_id of a BMS user (null when the row or the value is missing). */
-  findOpenSimUserId(bmsUserId: string): Promise<string | null>;
+  /** A BMS user from user_index + institute_index (null when not in the index). */
+  findUser(bmsUserId: string): Promise<IndexedUser | null>;
+  /**
+   * Consumes a one-time service action token (ew_index.service_action_tokens): true when a
+   * matching, unexpired token existed and was deleted.
+   */
+  consumeServiceToken(tokenId: string, action: string, subjectUserId: string): Promise<boolean>;
+}
+
+export interface IndexedUser extends BmsUserRef {
+  username: string;
+  accountId: string;
+  /** user_index.open_sim_user_id (the grid PrincipalID), null when unknown */
+  openSimUserId: string | null;
 }
 
 /** OpenSim grid DB (SELECT only on useraccounts). */
@@ -78,11 +90,11 @@ export interface BmsAdapterClient {
   computeHash(password: string, salt: string): Promise<string>;
   /** POST /users/{id}/password/validate: false when the password is in the user's recent history. */
   isPasswordAllowed(user: BmsUserRef, newPassword: string): Promise<boolean>;
-  /** PUT /users/{id}/password { newPassword, isInitial: false }. Throws AppError(400 PASSWORD_RECENTLY_USED) on reuse. */
-  setPassword(user: BmsUserRef, newPassword: string): Promise<void>;
+  /** PUT /users/{id}/password { newPassword, isInitial }. Throws AppError(400 PASSWORD_RECENTLY_USED) on reuse. */
+  setPassword(user: BmsUserRef, newPassword: string, isInitial: boolean): Promise<void>;
 }
 
-/** A BMS user as identified by an access token: bms-adapter needs X-Organization and X-Institute-Id. */
+/** A BMS user as bms-adapter addresses it: X-Organization and X-Institute-Id headers. */
 export interface BmsUserRef {
   userId: string;
   organization: Organization;

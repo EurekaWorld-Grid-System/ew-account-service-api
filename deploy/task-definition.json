@@ -29,8 +29,7 @@
       "secrets": [
         { "name": "ACCOUNT_SERVICE_API_KEY", "valueFrom": "__ACCOUNT_SERVICE_API_KEY_SECRET__" },
         { "name": "AURORA_PASSWORD", "valueFrom": "__AURORA_PASSWORD_SECRET__" },
-        { "name": "BMS_ADAPTER_API_KEY", "valueFrom": "__BMS_ADAPTER_API_KEY_SECRET__" },
-        { "name": "JWT_PUBLIC_KEY", "valueFrom": "__JWT_PUBLIC_KEY_SECRET__" }
+        { "name": "BMS_ADAPTER_API_KEY", "valueFrom": "__BMS_ADAPTER_API_KEY_SECRET__" }
       ],
       "healthCheck": {
         "command": [
