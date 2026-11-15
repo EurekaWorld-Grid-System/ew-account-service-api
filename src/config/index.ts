@@ -57,6 +57,7 @@ export interface DbConfig {
   password: string;
   indexDbName: string;
   gridDbName: string;
+  systemDbName: string;
   timeoutMs: number;
 }
 
@@ -87,6 +88,7 @@ export function loadRegistrationConfig(): RegistrationConfig {
       password: requireEnv('AURORA_PASSWORD'),
       indexDbName: requireEnv('INDEX_DB_NAME'),
       gridDbName: requireEnv('GRID_DB_NAME'),
+      systemDbName: requireEnv('SYSTEM_DB_NAME'),
       timeoutMs: intEnv('DB_TIMEOUT_MS', 3000),
     },
     // Not needed in ROBUST_SKIP mode

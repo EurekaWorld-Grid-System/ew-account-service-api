@@ -82,18 +82,20 @@ const key = (n: GridName) => `${n.firstName} ${n.lastName}`;
 export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
   return {
     robustSkip,
+    system: {
+      consumeServiceToken: async tokenId => {
+        const i = s.serviceTokens.findIndex(t => t.tokenId === tokenId);
+        if (i < 0) return null;
+        const [t] = s.serviceTokens.splice(i, 1);
+        return { action: t.action, subjectUserId: t.subjectUserId, actingUserId: t.subjectUserId };
+      },
+    },
     index: {
       findCoupon: async c => s.coupons[c] ?? null,
       emailExists: async e => s.emails.has(e),
       usernameExists: async u => s.usernames.has(u),
       avatarCodeExists: async a => s.avatars.has(a),
       findUser: async id => s.users.get(id) ?? null,
-      consumeServiceToken: async (tokenId, action, subjectUserId) => {
-        const i = s.serviceTokens.findIndex(t => t.tokenId === tokenId && t.action === action && t.subjectUserId === subjectUserId);
-        if (i < 0) return false;
-        s.serviceTokens.splice(i, 1);
-        return true;
-      },
     },
     grid: {
       nameExists: async names => names.some(n => s.gridNames.has(key(n))),

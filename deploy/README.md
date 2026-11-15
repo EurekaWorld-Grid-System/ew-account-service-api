@@ -105,15 +105,19 @@ curl -s -X POST http://apiaccounttemp.eurekaworld.internal:8080/registration/val
 one-time `system:set-password` service token). They sync the grid password through the registration
 Robust (`ROBUST_BASE_URL`, `POST /api/password/<PrincipalID>`), which 0.2.0 already reaches.
 
-One new database grant, as the Aurora admin: consuming a service action token deletes its row, the same
-way ew-portal-api does it (`db/setup.sql`):
+New: the `ew_system` database (this component owns it for now, Pre-Launch Security Design §4.2) with the
+one-time service action tokens. As a DB admin, run `db/ew_system_service_action_tokens.sql` once per
+environment (`USE dev_ew_system;` in dev, `USE ew_system;` in production; the file shows where). It creates the
+`service_action_tokens` table and two `SQL SECURITY DEFINER` routines, and grants this component's user
+`EXECUTE` on `sp_consume_service_action_token` only:
 
-```sql
-GRANT SELECT, DELETE ON `ew_index`.`service_action_tokens` TO 'account_service_api'@'172.31.%';
-```
+- `sp_mint_service_action_token(action, subject_user_id, acting_user_id)` → `{ token_id }`, valid 30 s. Allowed
+  action: `system:set-password` (forgot-password; the caller mints it with subject = acting = the user's id).
+  ew-portal-api's DB user needs `EXECUTE` on it.
+- `sp_consume_service_action_token(token_id)` → `{ found, action, subject_user_id, acting_user_id }`; deletes the
+  token either way. The account service then checks action and subject against the request.
 
-The tokens are minted by the caller with `ew_index.mint_service_action_token('system:set-password',
-<userId>, <userId>)`.
+`SYSTEM_DB_NAME` is in `config.env` (`ew_system`); dev `.env` uses `dev_ew_system`.
 
 ## Redeploy
 

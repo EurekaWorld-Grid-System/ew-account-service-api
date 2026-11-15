@@ -23,6 +23,7 @@
         { "name": "AURORA_USER", "value": "__AURORA_USER__" },
         { "name": "INDEX_DB_NAME", "value": "__INDEX_DB_NAME__" },
         { "name": "GRID_DB_NAME", "value": "__GRID_DB_NAME__" },
+        { "name": "SYSTEM_DB_NAME", "value": "__SYSTEM_DB_NAME__" },
         { "name": "ROBUST_BASE_URL", "value": "__ROBUST_BASE_URL__" },
         { "name": "BMS_ADAPTER_BASE_URL", "value": "__BMS_ADAPTER_BASE_URL__" }
       ],

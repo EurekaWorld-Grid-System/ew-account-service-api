@@ -53,6 +53,7 @@ sed -e "s|__APP__|$APP|g" \
     -e "s|__AURORA_USER__|$AURORA_USER|g" \
     -e "s|__INDEX_DB_NAME__|$INDEX_DB_NAME|g" \
     -e "s|__GRID_DB_NAME__|$GRID_DB_NAME|g" \
+    -e "s|__SYSTEM_DB_NAME__|$SYSTEM_DB_NAME|g" \
     -e "s|__ROBUST_BASE_URL__|$ROBUST_BASE_URL|g" \
     -e "s|__BMS_ADAPTER_BASE_URL__|$BMS_ADAPTER_BASE_URL|g" \
     -e "s|__ACCOUNT_SERVICE_API_KEY_SECRET__|$ACCOUNT_SERVICE_API_KEY_SECRET|g" \

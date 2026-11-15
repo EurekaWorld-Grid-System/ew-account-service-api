@@ -6,7 +6,8 @@ import { BmsUserRef, IndexedUser, PasswordChangeDeps } from './types';
 
 // Password changes (Pre-Launch Security Design §1). Two entry points, one write path:
 // - resetPasswordBySystem: the forgot-password flow. ew-portal-api authenticates the user with the
-//   emailed code, then mints a one-time `system:set-password` service token for this call.
+//   emailed code, then mints a one-time `system:set-password` service token for this call
+//   (ew_system.sp_mint_service_action_token; consumed here with sp_consume_service_action_token).
 // - changePassword: every other change (own, admin, teacher). The acting user (who may be the
 //   user themself) proves their CURRENT password; isInitial/expiry don't matter here.
 // Both then: password standard → history → BMS password → grid password (registration Robust).
@@ -134,9 +135,15 @@ export async function resetPasswordBySystem(
   }
   const newPassword = parsePassword(body.newPassword, 'newPassword');
 
-  // One-time: consumed before any other check, so a token can never be replayed
-  if (!(await deps.index.consumeServiceToken(serviceToken, SYSTEM_SET_PASSWORD_ACTION, userId))) {
-    logger.warn('Password reset refused: invalid or expired service token', { userId });
+  // One-time: consumed (deleted) before any other check, so a token can never be replayed. The
+  // routine returns what the token was minted for; it must match this request.
+  const token = await deps.system.consumeServiceToken(serviceToken.toLowerCase());
+  if (!token || token.action !== SYSTEM_SET_PASSWORD_ACTION || token.subjectUserId.toLowerCase() !== userId) {
+    logger.warn('Password reset refused: invalid, expired or mismatched service token', {
+      userId,
+      tokenAction: token?.action ?? null,
+      tokenSubject: token?.subjectUserId ?? null,
+    });
     throw new AppError(403, 'INVALID_SERVICE_TOKEN', 'Invalid or expired service token');
   }
 

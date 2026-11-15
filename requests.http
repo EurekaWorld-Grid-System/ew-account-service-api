@@ -53,7 +53,7 @@ Content-Type: application/json
 
 { "actingUserId": "{{userId}}", "actingUserPassword": "Change1234!", "newPassword": "Change5678!" }
 
-### Forgot-password reset (needs a fresh token: CALL dev_ew_index.mint_service_action_token('system:set-password', '<userId>', '<userId>'), valid 30 s)
+### Forgot-password reset (needs a fresh token: CALL dev_ew_system.sp_mint_service_action_token('system:set-password', '<userId>', '<userId>'), valid 30 s)
 POST {{base}}/users/{{userId}}/password/reset
 X-Api-Key: {{key}}
 X-Service-Token: paste-the-token-id

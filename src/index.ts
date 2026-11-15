@@ -13,6 +13,7 @@ const app = createApp({
   registration: {
     index: dbs.index,
     grid: dbs.grid,
+    system: dbs.system,
     robust: new HttpRobustClient(reg.robustBaseUrl, reg.robustTimeoutMs),
     bms: new HttpBmsAdapterClient(reg.bmsAdapterBaseUrl, reg.bmsAdapterApiKey, reg.bmsAdapterTimeoutMs),
     robustSkip: reg.robustSkip,

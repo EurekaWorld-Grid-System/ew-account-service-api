@@ -19,11 +19,18 @@ export interface IndexRepository {
   avatarCodeExists(avatarCode: string): Promise<boolean>;
   /** A BMS user from user_index + institute_index (null when not in the index). */
   findUser(bmsUserId: string): Promise<IndexedUser | null>;
-  /**
-   * Consumes a one-time service action token (ew_index.service_action_tokens): true when a
-   * matching, unexpired token existed and was deleted.
-   */
-  consumeServiceToken(tokenId: string, action: string, subjectUserId: string): Promise<boolean>;
+}
+
+/** ew_system (EXECUTE on its SQL SECURITY DEFINER routines only). */
+export interface SystemRepository {
+  /** sp_consume_service_action_token: the token's details when it existed and hadn't expired (it's deleted either way). */
+  consumeServiceToken(tokenId: string): Promise<ServiceToken | null>;
+}
+
+export interface ServiceToken {
+  action: string;
+  subjectUserId: string;
+  actingUserId: string;
 }
 
 export interface IndexedUser extends BmsUserRef {
@@ -103,6 +110,7 @@ export interface BmsUserRef {
 
 export interface PasswordChangeDeps {
   index: IndexRepository;
+  system: SystemRepository;
   grid: GridRepository;
   robust: RobustClient;
   bms: BmsAdapterClient;
@@ -112,6 +120,8 @@ export interface PasswordChangeDeps {
 
 export interface RegistrationDeps {
   index: IndexRepository;
+  /** Used by the password routes (registration and passwords share one deps object) */
+  system: SystemRepository;
   grid: GridRepository;
   robust: RobustClient;
   bms: BmsAdapterClient;

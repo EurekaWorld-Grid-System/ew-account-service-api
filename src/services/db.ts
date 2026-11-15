@@ -1,11 +1,20 @@
-import mysql, { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import mysql, { Pool, RowDataPacket } from 'mysql2/promise';
 import { DbConfig } from '../config';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { CouponInfo, GridName, GridRepository, IndexedUser, IndexRepository, Organization } from './types';
+import {
+  CouponInfo,
+  GridName,
+  GridRepository,
+  IndexedUser,
+  IndexRepository,
+  Organization,
+  ServiceToken,
+  SystemRepository,
+} from './types';
 
-// Two pools on the same Aurora cluster and database user (SELECT only), different
-// databases: ew_index and the OpenSim grid DB (design §4).
+// Three pools on the same Aurora cluster and database user, different databases:
+// ew_index and the OpenSim grid DB (SELECT only, design §4), ew_system (EXECUTE on its routines).
 function createPool(cfg: DbConfig, database: string): Pool {
   return mysql.createPool({
     host: cfg.host,
@@ -21,11 +30,18 @@ function createPool(cfg: DbConfig, database: string): Pool {
   });
 }
 
-function dbFailure(code: 'GRID_DB_UNAVAILABLE' | 'INDEX_DB_UNAVAILABLE', err: unknown): AppError {
+type DbCode = 'GRID_DB_UNAVAILABLE' | 'INDEX_DB_UNAVAILABLE' | 'SYSTEM_DB_UNAVAILABLE';
+const DB_NAMES: Record<DbCode, string> = {
+  GRID_DB_UNAVAILABLE: 'Grid database unavailable',
+  INDEX_DB_UNAVAILABLE: 'Index database unavailable',
+  SYSTEM_DB_UNAVAILABLE: 'System database unavailable',
+};
+
+function dbFailure(code: DbCode, err: unknown): AppError {
   // Log the driver's error code/message only: never SQL parameters
   const e = err as { code?: string; message?: string };
   logger.error('Database query failed', { code, dbErrorCode: e.code, dbMessage: e.message });
-  return new AppError(503, code, code === 'GRID_DB_UNAVAILABLE' ? 'Grid database unavailable' : 'Index database unavailable');
+  return new AppError(503, code, DB_NAMES[code]);
 }
 
 export class MysqlIndexRepository implements IndexRepository {
@@ -95,21 +111,6 @@ export class MysqlIndexRepository implements IndexRepository {
     };
   }
 
-  async consumeServiceToken(tokenId: string, action: string, subjectUserId: string): Promise<boolean> {
-    // Same one-time semantics as ew-portal-api: a single DELETE that only matches a live token
-    try {
-      const [result] = await this.pool.execute<ResultSetHeader>({
-        sql:
-          'DELETE FROM service_action_tokens ' +
-          'WHERE token_id = ? AND action = ? AND subject_user_id = ? AND expires_at > UTC_TIMESTAMP()',
-        values: [tokenId, action, subjectUserId],
-        timeout: this.timeoutMs,
-      });
-      return result.affectedRows === 1;
-    } catch (err) {
-      throw dbFailure('INDEX_DB_UNAVAILABLE', err);
-    }
-  }
 
   async avatarCodeExists(avatarCode: string): Promise<boolean> {
     const rows = await this.rows('SELECT 1 FROM avatar_index WHERE avatar_code = ? AND is_active = TRUE LIMIT 1', [
@@ -159,20 +160,48 @@ export class MysqlGridRepository implements GridRepository {
   }
 }
 
+export class MysqlSystemRepository implements SystemRepository {
+  constructor(
+    private readonly pool: Pool,
+    private readonly timeoutMs: number
+  ) {}
+
+  async consumeServiceToken(tokenId: string): Promise<ServiceToken | null> {
+    let rows: RowDataPacket[];
+    try {
+      // CALL returns [resultSet, okPacket]; the routine selects exactly one row
+      const [sets] = await this.pool.query<RowDataPacket[][]>({
+        sql: 'CALL sp_consume_service_action_token(?)',
+        values: [tokenId],
+        timeout: this.timeoutMs,
+      });
+      rows = sets[0] ?? [];
+    } catch (err) {
+      throw dbFailure('SYSTEM_DB_UNAVAILABLE', err);
+    }
+    const r = rows[0];
+    if (!r || Number(r.found) !== 1) return null;
+    return { action: String(r.action), subjectUserId: String(r.subject_user_id), actingUserId: String(r.acting_user_id) };
+  }
+}
+
 export interface Databases {
   index: MysqlIndexRepository;
   grid: MysqlGridRepository;
+  system: MysqlSystemRepository;
   close(): Promise<void>;
 }
 
 export function createDatabases(cfg: DbConfig): Databases {
   const indexPool = createPool(cfg, cfg.indexDbName);
   const gridPool = createPool(cfg, cfg.gridDbName);
+  const systemPool = createPool(cfg, cfg.systemDbName);
   return {
     index: new MysqlIndexRepository(indexPool, cfg.timeoutMs),
     grid: new MysqlGridRepository(gridPool, cfg.timeoutMs),
+    system: new MysqlSystemRepository(systemPool, cfg.timeoutMs),
     close: async () => {
-      await Promise.allSettled([indexPool.end(), gridPool.end()]);
+      await Promise.allSettled([indexPool.end(), gridPool.end(), systemPool.end()]);
     },
   };
 }
