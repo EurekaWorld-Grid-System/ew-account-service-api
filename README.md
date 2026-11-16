@@ -20,6 +20,8 @@ Node.js 22 LTS (`node:22-alpine`) + TypeScript + Express 5, helmet, winston logg
 | POST | `/registration/validate-username` | `{ username }` → `{ available: true }` · 409 `USERNAME_ALREADY_IN_USE` · 400 `INVALID_USERNAME` |
 | POST | `/registration` | `{ couponCode, username, firstName, lastName, email?, password, avatarCode }` → 201 `{ accountId, username }` |
 | PUT | `/users/:userId/password` | `{ actingUserId, actingUserPassword, newPassword, isInitial? }` → 200 `{ status: "password_changed", gridSync: "ok" \| "failed" \| "skipped", code? }` |
+| POST | `/auth/login` | `{ username, password, captchaToken?, mfaToken? }` → 200 `{ accessToken, user }` + refresh cookie, or 200 `{ status: "MFA_REQUIRED" \| "MFA_INITIAL" }` |
+| POST | `/auth/mfa/qr` | `{ username, password, captchaToken? }` → `image/png` (QR of the never-verified MFA secret) |
 | POST | `/users/:userId/password/reset` | Header `X-Service-Token` (`system:set-password`); `{ newPassword }` → same 200 response |
 
 All `/registration*` routes need the caller's `X-Api-Key` (`ACCOUNT_SERVICE_API_KEY`; 401 `INVALID_API_KEY`).
@@ -31,6 +33,14 @@ Rules: username is one or two words of `[A-Za-z0-9_]`, 1–64 characters each (R
 `ROBUST_SKIP=true` (dev only, refused in production) skips Robust and the grid lookup; a random UUID stands in for the PrincipalID and bms-adapter is still called.
 
 Errors follow the standards' `{ code, message }` shape: also `NOT_FOUND` (404), `INVALID_JSON` (400), `PAYLOAD_TOO_LARGE` (413), `INDEX_DB_UNAVAILABLE` / `GRID_DB_UNAVAILABLE` (503), `INTERNAL_ERROR` (500).
+
+**Login** (`POST /auth/login`, copied from ew-portal-api; Asaff 2026-11-16). ew-portal-api proxies it unchanged and forwards the end user's IP as the first `X-Forwarded-For` entry; the response (body, `Retry-After`, `Set-Cookie`) goes back as is. Steps as in ew-portal-api: rate limit per (username, IP), 10 attempts / 15 min → 429 `RATE_LIMITED` + `Retry-After`; after 3 consecutive failures reCAPTCHA v2 (400 `CAPTCHA_REQUIRED` / `INVALID_CAPTCHA`); `account_index` ⋈ `user_index` by username (+ `BMS_LOGIN_FALLBACK_ENABLED` on-demand migration); BMS password hash → 401 `INVALID_CREDENTIALS` (`requiresCaptcha: true` from the 3rd failure). Then MFA (new):
+- `hasMfa` and no `mfaToken` → 200 `{ status: "MFA_REQUIRED" }`, or `{ status: "MFA_INITIAL" }` while the secret was never verified (`mfaIsInitial`). No tokens.
+- `mfaToken` (6 digits) → TOTP check (RFC 6238, ±1 step) on the BMS secret (bms-adapter `GET /users/{id}/mfa`); a code from a step at or before the last verification is rejected (no reuse). Wrong → 401 `INVALID_MFA_TOKEN` (with `status`; counts as a failed attempt). Right → bms-adapter `POST /users/{id}/mfa/verify` (sets `LastVerificationOn`, which ends the initial state).
+- `hasMfa` but no active secret → 409 `MFA_NOT_AVAILABLE`.
+- Success: `{ accessToken, user }` and the `ewRefreshToken` cookie, identical to ew-portal-api (same claims, same RS256 key pair, `COOKIE_DOMAIN`).
+
+`POST /auth/mfa/qr`: same password checks and rate limit, then the QR (PNG, `Cache-Control: no-store`) of `otpauth://totp/EurekaWorld:<username>?secret=…&issuer=EurekaWorld`, generated here; only while the secret was never verified (else 409 `MFA_NOT_INITIAL`).
 
 **Passwords** (Pre-Launch Security Design §1; all password authentication moves here). `:userId` is the BMS `Users.UserId` (`user_index.user_id`); both routes need the caller's `X-Api-Key`.
 

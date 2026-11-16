@@ -6,12 +6,16 @@ import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { createRegistrationRouter } from './routes/registration';
 import { createUsersRouter } from './routes/users';
+import { createAuthRouter } from './routes/auth';
+import { LoginDeps } from './services/login';
 import { RegistrationDeps } from './services/types';
 
 export interface AppOptions {
   apiKey: string;
   /** Registration and password change share the same repositories and clients */
   registration: RegistrationDeps;
+  /** POST /auth/login, POST /auth/mfa/qr */
+  login: LoginDeps;
 }
 
 // Internal-only API: called by backends (v1.0: ew-portal-api) inside the VPC through
@@ -42,6 +46,7 @@ export function createApp(opts: AppOptions): Express {
   // ── Routes ───────────────────────────────────────────────────────────────────
   app.use(createRegistrationRouter(opts.apiKey, opts.registration));
   app.use(createUsersRouter(opts.apiKey, opts.registration));
+  app.use(createAuthRouter(opts.apiKey, opts.login));
 
   app.use(notFound);
   app.use(errorHandler);

@@ -1,6 +1,6 @@
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
-import { BmsAdapterClient, BmsCreatedUser, BmsCreateUser, BmsUserRef } from './types';
+import { BmsAdapterClient, BmsCreatedUser, BmsCreateUser, BmsUserRef, Credentials } from './types';
 
 // bms-adapter (internal, X-Api-Key). Response envelope:
 // { success, message, code, data } with the HTTP status mapped from code (400/404/409, ...).
@@ -111,8 +111,8 @@ export class HttpBmsAdapterClient implements BmsAdapterClient {
   }
 
   // ── Passwords (Pre-Launch Security Design §1; the same calls ew-portal-api makes) ──
-  async getCredentials(user: BmsUserRef): Promise<{ hashCode: string; salt: string } | null> {
-    const reply = await this.request<{ hashCode?: string; salt?: string }>(
+  async getCredentials(user: BmsUserRef): Promise<Credentials | null> {
+    const reply = await this.request<Partial<Credentials>>(
       'GET',
       `/users/${encodeURIComponent(user.userId)}/credentials`,
       { op: 'getCredentials', failCode: 'BMS_ADAPTER_UNAVAILABLE', user }
@@ -122,7 +122,59 @@ export class HttpBmsAdapterClient implements BmsAdapterClient {
     if (reply.status !== 200 || !reply.body?.success || typeof d?.hashCode !== 'string' || typeof d?.salt !== 'string') {
       throw this.fail('getCredentials', reply, 'BMS_ADAPTER_UNAVAILABLE', { userId: user.userId });
     }
-    return { hashCode: d.hashCode, salt: d.salt };
+    return {
+      hashCode: d.hashCode,
+      salt: d.salt,
+      isInitial: d.isInitial === true,
+      globalRole: typeof d.globalRole === 'string' ? d.globalRole : 'User',
+      hasMfa: d.hasMfa === true,
+      mfaIsInitial: d.mfaIsInitial === true,
+    };
+  }
+
+  // ── Login (copied from ew-portal-api) and MFA (bms-adapter v39.10) ──────────
+  async migrateByUsername(username: string): Promise<boolean> {
+    const reply = await this.request<{ status?: string }>('POST', '/users/migrate-by-username', {
+      op: 'migrateByUsername',
+      failCode: 'BMS_ADAPTER_UNAVAILABLE',
+      body: { username },
+    });
+    if (reply.status === 200 && reply.body?.success) {
+      logger.info('Login: BmsLoginFallback migration', { username, status: reply.body.data?.status ?? null });
+      return true;
+    }
+    // 404 = not in BMS / back-fill disabled; 500/501 = migration failed: the login falls through to 401
+    const code = reply.body?.code ?? reply.body?.errorCode ?? null;
+    if (reply.status === 404) logger.debug('Login: BmsLoginFallback found nothing', { username, code });
+    else logger.warn('Login: BmsLoginFallback migration failed', { username, status: reply.status, code });
+    return false;
+  }
+
+  async getMfa(user: BmsUserRef): Promise<{ authCode: string; lastVerificationOn: string | null } | null> {
+    const reply = await this.request<{ authCode?: string; lastVerificationOn?: string | null }>(
+      'GET',
+      `/users/${encodeURIComponent(user.userId)}/mfa`,
+      { op: 'getMfa', failCode: 'BMS_ADAPTER_UNAVAILABLE', user }
+    );
+    if (reply.status === 404) return null;
+    const d = reply.body?.data;
+    // Never log the body here: it carries the TOTP secret
+    if (reply.status !== 200 || !reply.body?.success || typeof d?.authCode !== 'string' || d.authCode === '') {
+      throw this.fail('getMfa', { status: reply.status, body: { code: reply.body?.code ?? null } }, 'BMS_ADAPTER_UNAVAILABLE', {
+        userId: user.userId,
+      });
+    }
+    return { authCode: d.authCode, lastVerificationOn: typeof d.lastVerificationOn === 'string' ? d.lastVerificationOn : null };
+  }
+
+  async markMfaVerified(user: BmsUserRef): Promise<void> {
+    const reply = await this.request<unknown>('POST', `/users/${encodeURIComponent(user.userId)}/mfa/verify`, {
+      op: 'markMfaVerified',
+      failCode: 'BMS_ADAPTER_UNAVAILABLE',
+      user,
+    });
+    if (reply.status === 200 && reply.body?.success) return;
+    throw this.fail('markMfaVerified', reply, 'BMS_ADAPTER_UNAVAILABLE', { userId: user.userId });
   }
 
   async computeHash(password: string, salt: string): Promise<string> {

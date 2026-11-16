@@ -119,6 +119,25 @@ environment (`USE dev_ew_system;` in dev, `USE ew_system;` in production; the fi
 
 `SYSTEM_DB_NAME` is in `config.env` (`ew_system`); dev `.env` uses `dev_ew_system`.
 
+## Login setup (0.4.0, once)
+
+`POST /auth/login` and `POST /auth/mfa/qr` (copied from ew-portal-api, plus MFA) sign tokens with the RS256 private
+key ew-portal-api uses, verify reCAPTCHA (outbound HTTPS to google.com through the task's public IP) and set the
+refresh cookie on `.eurekaworld.co.il`. Needs bms-adapter v39.10+ in production (`GET /users/{id}/mfa`,
+`POST /users/{id}/mfa/verify`, `mfaIsInitial` in credentials).
+
+```bash
+source deploy/config.env
+aws secretsmanager create-secret --region $R --name $APP/jwt-private-key \
+  --secret-string file://<path to ew-portal-api's production private key .pem> --query ARN --output text
+aws secretsmanager create-secret --region $R --name $APP/recaptcha-secret-key \
+  --secret-string '<ew-portal-api production RECAPTCHA_SECRET_KEY>' --query ARN --output text
+```
+
+Put the ARNs into `config.env` (`JWT_PRIVATE_KEY_SECRET`, `RECAPTCHA_SECRET_KEY_SECRET`), set
+`BMS_LOGIN_FALLBACK_ENABLED` to ew-portal-api's production value, and commit. The execution role's
+`$APP-secrets` policy already covers `$APP/*`. No new database grants.
+
 ## Redeploy
 
 ```bash

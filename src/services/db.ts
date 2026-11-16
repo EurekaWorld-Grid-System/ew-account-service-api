@@ -8,6 +8,7 @@ import {
   GridRepository,
   IndexedUser,
   IndexRepository,
+  LoginUser,
   Organization,
   ServiceToken,
   SystemRepository,
@@ -90,6 +91,26 @@ export class MysqlIndexRepository implements IndexRepository {
       [username, username]
     );
     return rows.length > 0;
+  }
+
+  async findLoginUser(username: string): Promise<LoginUser | null> {
+    // Same query as ew-portal-api login (auroraClient.lookupByUsername)
+    const rows = await this.rows(
+      'SELECT ai.id AS accountId, ai.username AS username, ui.user_id AS userId, ' +
+        'ui.institute_id AS instituteId, ai.organization AS organization ' +
+        'FROM user_index ui JOIN account_index ai ON ai.id = ui.account_id ' +
+        'WHERE ai.username = ? LIMIT 1',
+      [username]
+    );
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return {
+      accountId: String(r.accountId),
+      username: String(r.username),
+      userId: String(r.userId),
+      instituteId: String(r.instituteId),
+      organization: String(r.organization),
+    };
   }
 
   async findUser(bmsUserId: string): Promise<IndexedUser | null> {

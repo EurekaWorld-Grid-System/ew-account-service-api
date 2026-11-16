@@ -18,6 +18,13 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/** A PEM from the environment; accepts literal "\\n" sequences (single-line .env / secret values). */
+function pemEnv(name: string): string {
+  const pem = requireEnv(name).replace(/\\n/g, '\n').trim();
+  if (!pem.startsWith('-----BEGIN ')) throw new Error(`${name} must be a PEM (-----BEGIN ...)`);
+  return pem + '\n';
+}
+
 function boolEnv(name: string): boolean {
   return (process.env[name] ?? '').trim().toLowerCase() === 'true';
 }
@@ -98,5 +105,35 @@ export function loadRegistrationConfig(): RegistrationConfig {
     bmsAdapterBaseUrl: withScheme(requireEnv('BMS_ADAPTER_BASE_URL')),
     bmsAdapterApiKey: requireEnv('BMS_ADAPTER_API_KEY'),
     bmsAdapterTimeoutMs: intEnv('BMS_ADAPTER_TIMEOUT_MS', 10_000),
+  };
+}
+
+// ── Login (POST /auth/login, copied from ew-portal-api) ───────────────────────
+export interface LoginConfig {
+  /** RS256 private key shared with ew-portal-api during the migration (secret) */
+  jwtPrivateKey: string;
+  accessTokenExpiry: string;
+  refreshTokenExpiry: string;
+  recaptchaSecretKey: string;
+  /** Domain of the refresh cookie, e.g. .eurekaworld.co.il (unset in dev = host-only) */
+  cookieDomain?: string;
+  bmsLoginFallback: boolean;
+}
+
+export function loadLoginConfig(): LoginConfig {
+  // Same variables and defaults as ew-portal-api (MoE Architecture v38 §7.1, §8.0)
+  const hours = (name: string) => {
+    const v = process.env[name];
+    if (!v) return undefined;
+    if (!(Number(v) > 0)) throw new Error(`${name} must be a positive number of hours, got "${v}"`);
+    return `${v}h`;
+  };
+  return {
+    jwtPrivateKey: pemEnv('JWT_PRIVATE_KEY'),
+    accessTokenExpiry: hours('ACCESS_TOKEN_MAX_AGE_HOURS') ?? '15m',
+    refreshTokenExpiry: hours('REFRESH_TOKEN_MAX_AGE_HOURS') ?? '12h',
+    recaptchaSecretKey: requireEnv('RECAPTCHA_SECRET_KEY'),
+    cookieDomain: process.env.COOKIE_DOMAIN || undefined,
+    bmsLoginFallback: boolEnv('BMS_LOGIN_FALLBACK_ENABLED'),
   };
 }

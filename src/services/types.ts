@@ -17,6 +17,8 @@ export interface IndexRepository {
   /** account_index.username or user_index.username */
   usernameExists(username: string): Promise<boolean>;
   avatarCodeExists(avatarCode: string): Promise<boolean>;
+  /** Login lookup by account_index.username (null when not in the index). */
+  findLoginUser(username: string): Promise<LoginUser | null>;
   /** A BMS user from user_index + institute_index (null when not in the index). */
   findUser(bmsUserId: string): Promise<IndexedUser | null>;
 }
@@ -91,14 +93,43 @@ export interface BmsCreatedUser {
 export interface BmsAdapterClient {
   /** bms-adapter POST /users (X-Registrant-Type: User). Throws AppError(502/504) on failure. */
   createUser(req: BmsCreateUser): Promise<BmsCreatedUser>;
-  /** GET /users/{id}/credentials → the stored hash and salt. null when the user doesn't exist. */
-  getCredentials(user: BmsUserRef): Promise<{ hashCode: string; salt: string } | null>;
+  /** GET /users/{id}/credentials. null when the user doesn't exist. */
+  getCredentials(user: BmsUserRef): Promise<Credentials | null>;
+  /** POST /users/migrate-by-username (BmsLoginFallback): true when the user is now in the index. */
+  migrateByUsername(username: string): Promise<boolean>;
+  /** GET /users/{id}/mfa: the active TOTP secret. null when MFA isn't enabled (404 MFA_NOT_ENABLED). */
+  getMfa(user: BmsUserRef): Promise<{ authCode: string; lastVerificationOn: string | null } | null>;
+  /** POST /users/{id}/mfa/verify: LastVerificationOn = now (also ends the "initial" state). */
+  markMfaVerified(user: BmsUserRef): Promise<void>;
   /** POST /users/compute-hash: the BMS hash of a password with the given salt. */
   computeHash(password: string, salt: string): Promise<string>;
   /** POST /users/{id}/password/validate: false when the password is in the user's recent history. */
   isPasswordAllowed(user: BmsUserRef, newPassword: string): Promise<boolean>;
   /** PUT /users/{id}/password { newPassword, isInitial }. Throws AppError(400 PASSWORD_RECENTLY_USED) on reuse. */
   setPassword(user: BmsUserRef, newPassword: string, isInitial: boolean): Promise<void>;
+}
+
+/** bms-adapter GET /users/{id}/credentials (v39.10). The TOTP secret is NOT here (GET /users/{id}/mfa). */
+export interface Credentials {
+  hashCode: string;
+  salt: string;
+  isInitial: boolean;
+  /** 'User' | 'Student' | 'Teacher', resolved by bms-adapter */
+  globalRole: string;
+  /** Users.UseDoubleAuth */
+  hasMfa: boolean;
+  /** the active DoubleAuths row exists and was never verified (LastVerificationOn NULL) */
+  mfaIsInitial: boolean;
+}
+
+/** user_index ⋈ account_index row used at login (same query as ew-portal-api). */
+export interface LoginUser {
+  accountId: string;
+  username: string;
+  userId: string;
+  instituteId: string;
+  /** account_index.organization: 'edu' | 'general' | 'global' | 'both' (deprecated) */
+  organization: string;
 }
 
 /** A BMS user as bms-adapter addresses it: X-Organization and X-Institute-Id headers. */

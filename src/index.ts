@@ -1,12 +1,16 @@
 import { createApp } from './app';
-import { config, loadRegistrationConfig, API_VERSION, SERVICE_NAME } from './config';
+import { config, loadLoginConfig, loadRegistrationConfig, API_VERSION, SERVICE_NAME } from './config';
+import { MemoryLoginGuard, recaptchaVerifier } from './services/loginGuard';
+import { TokenIssuer } from './services/tokens';
 import { createDatabases } from './services/db';
 import { HttpRobustClient } from './services/robust';
 import { HttpBmsAdapterClient } from './services/bmsAdapter';
 import { logger } from './utils/logger';
 
 const reg = loadRegistrationConfig();
+const loginCfg = loadLoginConfig();
 const dbs = createDatabases(reg.db);
+const bms = new HttpBmsAdapterClient(reg.bmsAdapterBaseUrl, reg.bmsAdapterApiKey, reg.bmsAdapterTimeoutMs);
 
 const app = createApp({
   apiKey: reg.apiKey,
@@ -15,8 +19,22 @@ const app = createApp({
     grid: dbs.grid,
     system: dbs.system,
     robust: new HttpRobustClient(reg.robustBaseUrl, reg.robustTimeoutMs),
-    bms: new HttpBmsAdapterClient(reg.bmsAdapterBaseUrl, reg.bmsAdapterApiKey, reg.bmsAdapterTimeoutMs),
+    bms,
     robustSkip: reg.robustSkip,
+  },
+  login: {
+    index: dbs.index,
+    bms,
+    guard: new MemoryLoginGuard(),
+    verifyCaptcha: recaptchaVerifier(loginCfg.recaptchaSecretKey),
+    tokens: new TokenIssuer({
+      privateKey: loginCfg.jwtPrivateKey,
+      accessTokenExpiry: loginCfg.accessTokenExpiry,
+      refreshTokenExpiry: loginCfg.refreshTokenExpiry,
+      cookieDomain: loginCfg.cookieDomain,
+      secureCookies: config.isProduction,
+    }),
+    bmsLoginFallback: loginCfg.bmsLoginFallback,
   },
 });
 

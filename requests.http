@@ -60,3 +60,17 @@ X-Service-Token: paste-the-token-id
 Content-Type: application/json
 
 { "newPassword": "Change9012!" }
+
+### Login (add "mfaToken": "123456" after MFA_REQUIRED / MFA_INITIAL)
+POST {{base}}/auth/login
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{ "username": "testuser01", "password": "Change1234!" }
+
+### MFA QR code (PNG; only while the secret was never verified)
+POST {{base}}/auth/mfa/qr
+X-Api-Key: {{key}}
+Content-Type: application/json
+
+{ "username": "testuser01", "password": "Change1234!" }

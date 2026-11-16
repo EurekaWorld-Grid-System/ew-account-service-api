@@ -25,12 +25,16 @@
         { "name": "GRID_DB_NAME", "value": "__GRID_DB_NAME__" },
         { "name": "SYSTEM_DB_NAME", "value": "__SYSTEM_DB_NAME__" },
         { "name": "ROBUST_BASE_URL", "value": "__ROBUST_BASE_URL__" },
-        { "name": "BMS_ADAPTER_BASE_URL", "value": "__BMS_ADAPTER_BASE_URL__" }
+        { "name": "BMS_ADAPTER_BASE_URL", "value": "__BMS_ADAPTER_BASE_URL__" },
+        { "name": "COOKIE_DOMAIN", "value": "__COOKIE_DOMAIN__" },
+        { "name": "BMS_LOGIN_FALLBACK_ENABLED", "value": "__BMS_LOGIN_FALLBACK_ENABLED__" }
       ],
       "secrets": [
         { "name": "ACCOUNT_SERVICE_API_KEY", "valueFrom": "__ACCOUNT_SERVICE_API_KEY_SECRET__" },
         { "name": "AURORA_PASSWORD", "valueFrom": "__AURORA_PASSWORD_SECRET__" },
-        { "name": "BMS_ADAPTER_API_KEY", "valueFrom": "__BMS_ADAPTER_API_KEY_SECRET__" }
+        { "name": "BMS_ADAPTER_API_KEY", "valueFrom": "__BMS_ADAPTER_API_KEY_SECRET__" },
+        { "name": "JWT_PRIVATE_KEY", "valueFrom": "__JWT_PRIVATE_KEY_SECRET__" },
+        { "name": "RECAPTCHA_SECRET_KEY", "valueFrom": "__RECAPTCHA_SECRET_KEY_SECRET__" }
       ],
       "healthCheck": {
         "command": [

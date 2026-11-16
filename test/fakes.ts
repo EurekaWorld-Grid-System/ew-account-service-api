@@ -1,4 +1,7 @@
+import crypto from 'node:crypto';
 import { createApp } from '../src/app';
+import { MemoryLoginGuard } from '../src/services/loginGuard';
+import { TokenIssuer } from '../src/services/tokens';
 import { AppError } from '../src/utils/errors';
 import {
   BmsCreatedUser,
@@ -33,6 +36,12 @@ export interface FakeState {
   passwordSets: { userId: string; newPassword: string; isInitial: boolean }[];
   gridPasswordSets: { principalId: string; password: string }[];
   robustPasswordFails: boolean;
+  // Login / MFA
+  mfa: Map<string, { secret: string; isInitial: boolean; lastVerificationOn: string | null }>; // userId -> active secret
+  mfaVerified: string[];
+  migrated: Set<string>; // usernames BmsLoginFallback can migrate
+  captchaOk: boolean;
+  mfaSecretMissing: boolean; // UseDoubleAuth set but no active DoubleAuths row
 }
 
 export function fakeState(): FakeState {
@@ -74,6 +83,11 @@ export function fakeState(): FakeState {
     passwordSets: [],
     gridPasswordSets: [],
     robustPasswordFails: false,
+    mfa: new Map(),
+    mfaVerified: [],
+    migrated: new Set(),
+    captchaOk: true,
+    mfaSecretMissing: false,
   };
 }
 
@@ -96,6 +110,11 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
       usernameExists: async u => s.usernames.has(u),
       avatarCodeExists: async a => s.avatars.has(a),
       findUser: async id => s.users.get(id) ?? null,
+      findLoginUser: async username => {
+        const u = [...s.users.values()].find(x => x.username === username);
+        if (!u || (username === 'late' && !s.migrated.has('done'))) return null;
+        return { accountId: u.accountId, username: u.username, userId: u.userId, instituteId: u.instituteId, organization: 'general' };
+      },
     },
     grid: {
       nameExists: async names => names.some(n => s.gridNames.has(key(n))),
@@ -122,7 +141,33 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
       // fake hash: "h(<password>:<salt>)"
       getCredentials: async u => {
         const c = s.credentials.get(u.userId);
-        return c ? { hashCode: `h(${c.password}:${c.salt})`, salt: c.salt } : null;
+        if (!c) return null;
+        const m = s.mfa.get(u.userId);
+        return {
+          hashCode: `h(${c.password}:${c.salt})`,
+          salt: c.salt,
+          isInitial: false,
+          globalRole: u.userId === ADMIN ? 'Teacher' : 'User',
+          hasMfa: !!m,
+          mfaIsInitial: !!m?.isInitial,
+        };
+      },
+      migrateByUsername: async username => {
+        if (!s.migrated.has(username)) return false;
+        s.migrated.add('done');
+        return true;
+      },
+      getMfa: async u => {
+        const m = s.mfa.get(u.userId);
+        return m && !s.mfaSecretMissing ? { authCode: m.secret, lastVerificationOn: m.lastVerificationOn } : null;
+      },
+      markMfaVerified: async u => {
+        s.mfaVerified.push(u.userId);
+        const m = s.mfa.get(u.userId);
+        if (m) {
+          m.isInitial = false;
+          m.lastVerificationOn = new Date().toISOString();
+        }
       },
       computeHash: async (password, salt) => `h(${password}:${salt})`,
       isPasswordAllowed: async (_u, p) => !s.recentPasswords.has(p),
@@ -133,6 +178,31 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
   };
 }
 
+// Test RS256 key pair, standing in for the key pair shared with ew-portal-api
+export const keys = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
+
 export function testApp(s: FakeState = fakeState(), robustSkip = false) {
-  return createApp({ apiKey: API_KEY, registration: fakeDeps(s, robustSkip) });
+  const deps = fakeDeps(s, robustSkip);
+  return createApp({
+    apiKey: API_KEY,
+    registration: deps,
+    login: {
+      index: deps.index,
+      bms: deps.bms,
+      guard: new MemoryLoginGuard(),
+      verifyCaptcha: async () => s.captchaOk,
+      tokens: new TokenIssuer({
+        privateKey: keys.privateKey,
+        accessTokenExpiry: '15m',
+        refreshTokenExpiry: '12h',
+        cookieDomain: '.example.test',
+        secureCookies: true,
+      }),
+      bmsLoginFallback: true,
+    },
+  });
 }
