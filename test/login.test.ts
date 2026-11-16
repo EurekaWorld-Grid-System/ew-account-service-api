@@ -2,10 +2,12 @@ import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { verifyTotp } from '../src/services/totp';
+import { authCodeToBase32, otpauthUri, verifyTotp } from '../src/services/totp';
 import { ADMIN, API_KEY, fakeState, keys, testApp, USER } from './fakes';
 
-const SECRET = authenticator.generateSecret();
+// BMS stores AuthCode as plain text; codes are made from its Base32-encoded UTF-8 bytes
+const SECRET = '1234509876';
+const code = () => authenticator.generate(authCodeToBase32(SECRET));
 const creds = { username: 'jdoe', password: 'OldPassw0rd1' };
 
 const login = (app: ReturnType<typeof testApp>, b: Record<string, unknown>, ip = '203.0.113.7') =>
@@ -104,7 +106,7 @@ describe('POST /auth/login: MFA', () => {
 
   it('valid code → tokens, and bms-adapter marks the secret verified (also ends MFA_INITIAL)', async () => {
     const s = withMfa(true);
-    const res = await login(testApp(s), { ...creds, mfaToken: authenticator.generate(SECRET) });
+    const res = await login(testApp(s), { ...creds, mfaToken: code() });
     expect(res.status).toBe(200);
     expect(typeof res.body.accessToken).toBe('string');
     expect(s.mfaVerified).toEqual([USER]);
@@ -114,7 +116,7 @@ describe('POST /auth/login: MFA', () => {
   it('wrong code → 401 INVALID_MFA_TOKEN (counts as a failure), nothing marked', async () => {
     const s = withMfa(false, '2026-01-01T00:00:00Z');
     const app = testApp(s);
-    const res = await login(app, { ...creds, mfaToken: '000000' === authenticator.generate(SECRET) ? '111111' : '000000' });
+    const res = await login(app, { ...creds, mfaToken: '000000' === code() ? '111111' : '000000' });
     expect([res.status, res.body.code, res.body.status]).toEqual([401, 'INVALID_MFA_TOKEN', 'MFA_REQUIRED']);
     expect(s.mfaVerified).toHaveLength(0);
     expect((await login(app, { ...creds, mfaToken: 'abc' })).body.code).toBe('INVALID_MFA_TOKEN');
@@ -123,16 +125,16 @@ describe('POST /auth/login: MFA', () => {
   it('a code can not be reused within its time step', async () => {
     const s = withMfa(false, '2026-01-01T00:00:00Z');
     const app = testApp(s);
-    const code = authenticator.generate(SECRET);
-    expect((await login(app, { ...creds, mfaToken: code })).status).toBe(200);
-    const again = await login(app, { ...creds, mfaToken: code });
+    const c = code();
+    expect((await login(app, { ...creds, mfaToken: c })).status).toBe(200);
+    const again = await login(app, { ...creds, mfaToken: c });
     expect([again.status, again.body.code]).toEqual([401, 'INVALID_MFA_TOKEN']);
   });
 
   it('UseDoubleAuth without an active secret → 409 MFA_NOT_AVAILABLE', async () => {
     const s = withMfa(false, '2026-01-01T00:00:00Z');
     s.mfaSecretMissing = true;
-    const res = await login(testApp(s), { ...creds, mfaToken: authenticator.generate(SECRET) });
+    const res = await login(testApp(s), { ...creds, mfaToken: code() });
     expect([res.status, res.body.code]).toEqual([409, 'MFA_NOT_AVAILABLE']);
   });
 });
@@ -165,13 +167,21 @@ describe('POST /auth/mfa/qr', () => {
   });
 });
 
+describe('AuthCode → Base32', () => {
+  it('encodes the UTF-8 bytes (RFC 4648, no padding) and puts that in the otpauth URI', () => {
+    expect(authCodeToBase32('foobar')).toBe('MZXW6YTBOI'); // RFC 4648 test vector
+    expect(authCodeToBase32('1234509876')).toBe('GEZDGNBVGA4TQNZW');
+    expect(otpauthUri('jdoe', '1234509876')).toContain('secret=GEZDGNBVGA4TQNZW');
+  });
+});
+
 describe('verifyTotp', () => {
   it('±1 step window; rejects a step at or before the last verification', () => {
     const now = Date.now();
-    const code = authenticator.generate(SECRET);
-    expect(verifyTotp(code, SECRET, null, now)).toBe(true);
-    expect(verifyTotp(code, SECRET, new Date(now).toISOString(), now)).toBe(false);
-    expect(verifyTotp(code, SECRET, new Date(now - 120_000).toISOString(), now)).toBe(true);
+    const c = code();
+    expect(verifyTotp(c, SECRET, null, now)).toBe(true);
+    expect(verifyTotp(c, SECRET, new Date(now).toISOString(), now)).toBe(false);
+    expect(verifyTotp(c, SECRET, new Date(now - 120_000).toISOString(), now)).toBe(true);
     expect(verifyTotp('12345', SECRET, null, now)).toBe(false);
   });
 });
