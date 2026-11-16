@@ -18,9 +18,20 @@ function requireEnv(name: string): string {
   return value;
 }
 
-/** A PEM from the environment; accepts literal "\\n" sequences (single-line .env / secret values). */
+/**
+ * A PEM key, as in ew-portal-api: inline in `name` (production: Secrets Manager; literal "\\n"
+ * sequences are accepted) or from the file at `${name}_PATH` (dev: ./keys/*.pem).
+ */
 function pemEnv(name: string): string {
-  const pem = requireEnv(name).replace(/\\n/g, '\n').trim();
+  let pem = process.env[name];
+  if (!pem) {
+    const keyPath = process.env[`${name}_PATH`];
+    if (!keyPath) throw new Error(`Either ${name} or ${name}_PATH must be set`);
+    const resolved = path.resolve(keyPath);
+    if (!fs.existsSync(resolved)) throw new Error(`Key file not found: ${resolved}`);
+    pem = fs.readFileSync(resolved, 'utf8');
+  }
+  pem = pem.replace(/\\n/g, '\n').trim();
   if (!pem.startsWith('-----BEGIN ')) throw new Error(`${name} must be a PEM (-----BEGIN ...)`);
   return pem + '\n';
 }

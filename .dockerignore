@@ -12,3 +12,4 @@ docker-compose*.yml
 Dockerfile*
 deploy
 test
+keys
