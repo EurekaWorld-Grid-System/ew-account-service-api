@@ -61,9 +61,10 @@ Content-Type: application/json
 
 { "newPassword": "Change9012!" }
 
-### Login (add "mfaToken": "123456" after MFA_REQUIRED / MFA_INITIAL)
+### Login (add "mfaToken": "123456" after MFA_REQUIRED / MFA_INITIAL; X-Client-IP = the end user IP)
 POST {{base}}/auth/login
 X-Api-Key: {{key}}
+X-Client-IP: 203.0.113.7
 Content-Type: application/json
 
 { "username": "testuser01", "password": "Change1234!" }
@@ -71,6 +72,7 @@ Content-Type: application/json
 ### MFA QR code (PNG; only while the secret was never verified)
 POST {{base}}/auth/mfa/qr
 X-Api-Key: {{key}}
+X-Client-IP: 203.0.113.7
 Content-Type: application/json
 
 { "username": "testuser01", "password": "Change1234!" }

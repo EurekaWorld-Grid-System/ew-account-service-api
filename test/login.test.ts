@@ -9,7 +9,7 @@ const SECRET = authenticator.generateSecret();
 const creds = { username: 'jdoe', password: 'OldPassw0rd1' };
 
 const login = (app: ReturnType<typeof testApp>, b: Record<string, unknown>, ip = '203.0.113.7') =>
-  request(app).post('/auth/login').set('X-Api-Key', API_KEY).set('X-Forwarded-For', `${ip}, 10.0.0.1`).send(b);
+  request(app).post('/auth/login').set('X-Api-Key', API_KEY).set('X-Client-IP', ip).send(b);
 
 const withMfa = (isInitial: boolean, lastVerificationOn: string | null = null) => {
   const s = fakeState();
@@ -66,6 +66,19 @@ describe('POST /auth/login (copied from ew-portal-api)', () => {
     expect([res.status, res.body.code]).toEqual([429, 'RATE_LIMITED']);
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
     expect((await login(app, creds, '198.51.100.9')).status).toBe(200); // another IP
+  });
+
+  it('client IP comes from X-Client-IP only: a faked X-Forwarded-For does not reset the counters', async () => {
+    const app = testApp();
+    const send = (xff: string) =>
+      request(app)
+        .post('/auth/login')
+        .set('X-Api-Key', API_KEY)
+        .set('X-Client-IP', '203.0.113.7')
+        .set('X-Forwarded-For', `${xff}, 10.0.0.1`)
+        .send({ ...creds, password: 'nope', captchaToken: 't' });
+    for (let i = 0; i < 10; i++) await send(`198.51.100.${i}`);
+    expect((await send('198.51.100.99')).status).toBe(429);
   });
 
   it('BmsLoginFallback: migrates an unknown username, then logs in', async () => {

@@ -1,17 +1,29 @@
+import { isIP } from 'node:net';
 import { Request, Router } from 'express';
+import { logger } from '../utils/logger';
 import { requireApiKey } from '../middleware/apiKey';
 import { login, LoginDeps, LoginInput, LoginReply, mfaQr } from '../services/login';
 import { REFRESH_TOKEN_COOKIE } from '../services/tokens';
 
 // /auth/* — called by ew-portal-api, which proxies the Portal frontend's requests unchanged and
-// passes the end user's IP in X-Forwarded-For (first entry), as its own ALB gave it.
+// sends the end user's IP in X-Client-IP: the address its public ALB saw (Express req.ip with
+// trust proxy = 1). The rate limit and captcha are keyed on it. X-Forwarded-For is NOT used: its
+// first entry is whatever the client sent, so it can be faked to get fresh counters. X-Client-IP
+// is trusted only because the request carries the caller's X-Api-Key.
 export function createAuthRouter(apiKey: string, deps: LoginDeps): Router {
   const router = Router();
   router.use('/auth', requireApiKey(apiKey));
 
-  // Same IP rule as ew-portal-api: first X-Forwarded-For entry, else the socket address
-  const clientIp = (req: Request): string =>
-    (req.get('X-Forwarded-For') ?? '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const clientIp = (req: Request): string => {
+    const ip = (req.get('X-Client-IP') ?? '').trim();
+    if (isIP(ip)) return ip;
+    // No usable client IP: every request from this caller shares one counter per username
+    logger.warn('Login: X-Client-IP missing or invalid; rate limit falls back to per-username', {
+      path: req.originalUrl,
+      given: ip ? 'invalid' : 'missing',
+    });
+    return 'unknown';
+  };
 
   const input = (req: Request): LoginInput => {
     const b = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
