@@ -189,7 +189,7 @@ describe('logout everywhere and password changes', () => {
     expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['logout-all', 'logout-all']);
   });
 
-  it('forgot-password reset revokes every session; a normal password change does not', async () => {
+  it('forgot-password reset revokes every session only with revokeAllSessions; a normal change never', async () => {
     const { app, s, sid, sid2 } = await twoSessions();
     const change = await request(app).put(`/users/${USER}/password`).set('X-Api-Key', API_KEY)
       .send({ newPassword: 'NewPassw0rd2', actingUserId: USER, actingUserPassword: 'OldPassw0rd1' });
@@ -197,11 +197,16 @@ describe('logout everywhere and password changes', () => {
     expect(change.body.sessionsRevoked).toBeUndefined();
     expect(s.sessions.get(sid)!.revokedReason).toBeNull();
 
-    const TOKEN = '33333333-3333-4333-8333-333333333333';
-    s.serviceTokens.push({ tokenId: TOKEN, action: 'system:set-password', subjectUserId: USER });
-    const reset = await request(app).post(`/users/${USER}/password/reset`).set('X-Api-Key', API_KEY)
-      .set('X-Service-Token', TOKEN).send({ newPassword: 'NewPassw0rd3' });
-    expect(reset.body).toMatchObject({ status: 'password_changed', sessionsRevoked: 2 });
+    const reset = (token: string, b: Record<string, unknown>) => {
+      s.serviceTokens.push({ tokenId: token, action: 'system:set-password', subjectUserId: USER });
+      return request(app).post(`/users/${USER}/password/reset`).set('X-Api-Key', API_KEY).set('X-Service-Token', token).send(b);
+    };
+    const plain = await reset('33333333-3333-4333-8333-333333333333', { newPassword: 'NewPassw0rd3' });
+    expect(plain.body).toEqual({ status: 'password_changed', gridSync: 'ok' });
+    expect(s.sessions.get(sid)!.revokedReason).toBeNull();
+
+    const all = await reset('44444444-4444-4444-8444-444444444444', { newPassword: 'NewPassw0rd4', revokeAllSessions: true });
+    expect(all.body).toMatchObject({ status: 'password_changed', sessionsRevoked: 2 });
     expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['password-reset', 'password-reset']);
   });
 });

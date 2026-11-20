@@ -23,8 +23,8 @@
 --   sp_revoke_auth_session(session_id, reason)
 --       → one row { revoked } (0/1). Logout.
 --   sp_revoke_user_auth_sessions(user_id, reason)
---       → one row { revoked } (count). Every session of a user: forgot-password reset and
---         logout with { allSessions: true }.
+--       → one row { revoked } (count). Every session of a user: forgot-password reset with
+--         { revokeAllSessions: true } and logout with { allSessions: true }.
 --
 -- Run as a DB admin (the routines run with the creator's rights), once per environment:
 --   dev:        USE dev_ew_system;   production: USE ew_system;

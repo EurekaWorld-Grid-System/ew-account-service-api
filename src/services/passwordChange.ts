@@ -23,7 +23,7 @@ export interface PasswordChangeResult {
   /** ok: grid password updated · failed: BMS changed, grid not (GRID_PASSWORD_SYNC_FAILED) · skipped: ROBUST_SKIP */
   gridSync: 'ok' | 'failed' | 'skipped';
   code?: 'GRID_PASSWORD_SYNC_FAILED';
-  /** forgot-password reset only: sessions revoked (null when revoking failed; the password is changed anyway) */
+  /** forgot-password reset with revokeAllSessions only: sessions revoked (null when revoking failed; the password is changed anyway) */
   sessionsRevoked?: number | null;
 }
 
@@ -151,9 +151,10 @@ export async function resetPasswordBySystem(
 
   const user = await findUserOr404(deps, userId);
   const result = await writePassword(deps, user, newPassword, false, { by: 'system' });
+  if (body.revokeAllSessions !== true) return result;
 
-  // Forgot-password means whoever holds the old password may be logged in: end every session
-  // (Asaff, 2026-11-20: only this reset revokes sessions; other password changes don't)
+  // Optional (Asaff, 2026-11-20), like logout's allSessions: whoever holds the old password may be
+  // logged in, so the caller can end every session. Other password changes revoke nothing.
   let sessionsRevoked: number | null = null;
   try {
     sessionsRevoked = await deps.system.revokeUserSessions(user.userId, 'password-reset');
