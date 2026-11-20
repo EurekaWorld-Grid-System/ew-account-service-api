@@ -16,7 +16,8 @@ import { Organization } from './types';
 //            current jti instead. The jti is rotated last, so a BMS or database failure before it
 //            (503) leaves the session as it was and the user can retry.
 //   verify   access token signature/expiry/type (as requireAuth) + its session is still active
-//   logout   access token as requireAuth; revokes its session and clears the cookie
+//   logout   access token as requireAuth; revokes its session (or, with allSessions: true, every
+//            session of the user: "log out everywhere") and clears the cookie
 //
 // Tokens without sid (issued before 0.5.0, or by ew-portal-api itself) have no session: refresh
 // and verify reject them, so every user logs in once after the switch.
@@ -116,9 +117,15 @@ export async function verify(deps: SessionDeps, authorization: string | undefine
   return { status: 200, body: { claims } };
 }
 
-export async function logout(deps: SessionDeps, authorization: string | undefined): Promise<LoginReply> {
+export async function logout(deps: SessionDeps, authorization: string | undefined, allSessions = false): Promise<LoginReply> {
   const claims = bearer(deps, authorization);
   if (isReply(claims)) return claims;
-  if (claims.sid) await deps.system.revokeSession(claims.sid, 'logout');
-  return { status: 200, body: { message: 'Logged out' }, clearRefreshCookie: true };
+  let sessionsRevoked = 0;
+  if (allSessions) {
+    sessionsRevoked = await deps.system.revokeUserSessions(claims.sub, 'logout-all');
+    logger.info('Logout everywhere', { userId: claims.sub, sessionsRevoked });
+  } else if (claims.sid) {
+    sessionsRevoked = (await deps.system.revokeSession(claims.sid, 'logout')) ? 1 : 0;
+  }
+  return { status: 200, body: { message: 'Logged out', sessionsRevoked }, clearRefreshCookie: true };
 }

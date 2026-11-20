@@ -37,6 +37,8 @@ export interface SystemRepository {
   isSessionActive(sessionId: string): Promise<boolean>;
   /** sp_revoke_auth_session: true when an active session was revoked. */
   revokeSession(sessionId: string, reason: string): Promise<boolean>;
+  /** sp_revoke_user_auth_sessions: how many active sessions were revoked. */
+  revokeUserSessions(userId: string, reason: string): Promise<number>;
 }
 
 export interface NewSession {

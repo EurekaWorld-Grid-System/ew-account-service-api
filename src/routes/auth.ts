@@ -74,9 +74,11 @@ export function createAuthRouter(apiKey: string, deps: LoginDeps): Router {
     send(res, await verify(deps, req.get('Authorization')));
   });
 
-  // Authorization: Bearer <access token> → revokes its session, clears the cookie
+  // Authorization: Bearer <access token>, optional { allSessions: true } → revokes its session (or
+  // all of the user's), clears the cookie
   router.post('/auth/logout', async (req, res) => {
-    send(res, await logout(deps, req.get('Authorization')));
+    const all = !!req.body && typeof req.body === 'object' && (req.body as Record<string, unknown>).allSessions === true;
+    send(res, await logout(deps, req.get('Authorization'), all));
   });
 
   return router;

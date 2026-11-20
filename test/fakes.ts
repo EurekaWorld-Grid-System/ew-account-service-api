@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { createApp } from '../src/app';
-import { MemoryLoginGuard } from '../src/services/loginGuard';
+import { MemoryLoginGuard, MemoryMfaGuard } from '../src/services/loginGuard';
 import { TokenIssuer } from '../src/services/tokens';
 import { AppError } from '../src/utils/errors';
 import {
@@ -148,6 +148,16 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
         const x = s.sessions.get(sid);
         return !!x && !x.revokedReason && x.expiresAt > Date.now();
       },
+      revokeUserSessions: async (userId, reason) => {
+        let n = 0;
+        for (const x of s.sessions.values()) {
+          if (x.userId.toLowerCase() === userId.toLowerCase() && !x.revokedReason && x.expiresAt > Date.now()) {
+            x.revokedReason = reason;
+            n++;
+          }
+        }
+        return n;
+      },
       revokeSession: async (sid, reason) => {
         const x = s.sessions.get(sid);
         if (!x || x.revokedReason) return false;
@@ -250,6 +260,7 @@ export function testApp(s: FakeState = fakeState(), robustSkip = false) {
       bms: deps.bms,
       system: deps.system,
       guard: new MemoryLoginGuard(),
+      mfaGuard: new MemoryMfaGuard(),
       verifyCaptcha: async () => s.captchaOk,
       tokens: new TokenIssuer({
         privateKey: keys.privateKey,

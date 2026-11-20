@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger';
-import { LoginGuard } from './loginGuard';
+import { LoginGuard, MfaGuard } from './loginGuard';
 import { TokenIssuer } from './tokens';
 import { otpauthUri, qrPng, TOTP_RE, verifyTotp } from './totp';
 import { BmsAdapterClient, BmsUserRef, Credentials, IndexRepository, LoginUser, Organization, SystemRepository } from './types';
@@ -16,7 +16,9 @@ import { BmsAdapterClient, BmsUserRef, Credentials, IndexRepository, LoginUser, 
 //                                    verified (LastVerificationOn; ends the initial state)
 //   then (or without MFA)          → access token + refresh cookie, same shape as ew-portal-api,
 //                                    in a new server-side session (0.5.0, services/session.ts).
-// Every request counts against the rate limit, so MFA codes can't be brute-forced.
+// Every request counts against the rate limit. A correct password resets the login counters (so the
+// MFA step and the QR request need no captcha: Asaff, 2026-11-20); wrong MFA codes have their own
+// per-user limit (MfaGuard: 5 per 15 minutes → 429 RATE_LIMITED).
 
 export interface LoginDeps {
   index: IndexRepository;
@@ -24,6 +26,8 @@ export interface LoginDeps {
   /** ew_system: login sessions */
   system: SystemRepository;
   guard: LoginGuard;
+  /** wrong 6-digit codes per user */
+  mfaGuard: MfaGuard;
   verifyCaptcha: (token: string) => Promise<boolean>;
   tokens: TokenIssuer;
   bmsLoginFallback: boolean;
@@ -111,6 +115,8 @@ async function authenticate(deps: LoginDeps, input: LoginInput): Promise<Authent
   const hash = await deps.bms.computeHash(password, credentials.salt);
   if (hash !== credentials.hashCode) return invalid();
 
+  // The username and password are proven: reset the counters (no captcha on the next step)
+  deps.guard.recordSuccess(key);
   return { user, bmsUser, organization, credentials, key };
 }
 
@@ -119,13 +125,22 @@ const isReply = (v: Authenticated | LoginReply): v is LoginReply => 'status' in 
 export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginReply> {
   const auth = await authenticate(deps, input);
   if (isReply(auth)) return auth;
-  const { user, bmsUser, organization, credentials, key } = auth;
+  const { user, bmsUser, organization, credentials } = auth;
 
   // 7 — MFA
   if (credentials.hasMfa) {
     const status = credentials.mfaIsInitial ? 'MFA_INITIAL' : 'MFA_REQUIRED';
     const mfaToken = typeof input.mfaToken === 'string' ? input.mfaToken.trim() : '';
     if (!mfaToken) return { status: 200, body: { status } };
+
+    const mfaCheck = deps.mfaGuard.check(user.userId);
+    if (mfaCheck.blocked) {
+      logger.warn('Login: MFA code limit reached', { userId: user.userId });
+      return {
+        ...err(429, 'RATE_LIMITED', 'Too many authentication codes. Try again later.', { status }),
+        headers: { 'Retry-After': String(Math.ceil((mfaCheck.retryAfterMs ?? 0) / 1000)) },
+      };
+    }
 
     const mfa = await deps.bms.getMfa(bmsUser);
     if (!mfa) {
@@ -135,13 +150,11 @@ export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginRe
     }
     // While initial, LastVerificationOn is NULL: no replay window to apply
     if (!TOTP_RE.test(mfaToken) || !verifyTotp(mfaToken, mfa.authCode, credentials.mfaIsInitial ? null : mfa.lastVerificationOn)) {
-      deps.guard.recordFailure(key);
+      deps.mfaGuard.recordFailure(user.userId);
       logger.warn('Login: invalid MFA token', { userId: user.userId, status });
-      return err(401, 'INVALID_MFA_TOKEN', 'Invalid authentication code', {
-        status,
-        ...(deps.guard.getFailureCount(key) >= 3 && { requiresCaptcha: true }),
-      });
+      return err(401, 'INVALID_MFA_TOKEN', 'Invalid authentication code', { status });
     }
+    deps.mfaGuard.reset(user.userId);
     await deps.bms.markMfaVerified(bmsUser);
     if (credentials.mfaIsInitial) logger.info('Login: MFA initialised', { userId: user.userId, accountId: user.accountId });
   }
@@ -157,7 +170,6 @@ export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginRe
     ttlSeconds: refresh.ttlSeconds,
     clientIp: input.ip === 'unknown' ? null : input.ip,
   });
-  deps.guard.recordSuccess(key);
   const globalRole = credentials.globalRole.toLowerCase();
   const claims = {
     sub: user.userId,

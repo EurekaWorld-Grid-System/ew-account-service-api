@@ -23,6 +23,8 @@ export interface PasswordChangeResult {
   /** ok: grid password updated · failed: BMS changed, grid not (GRID_PASSWORD_SYNC_FAILED) · skipped: ROBUST_SKIP */
   gridSync: 'ok' | 'failed' | 'skipped';
   code?: 'GRID_PASSWORD_SYNC_FAILED';
+  /** forgot-password reset only: sessions revoked (null when revoking failed; the password is changed anyway) */
+  sessionsRevoked?: number | null;
 }
 
 export function parseUserId(v: unknown, field = 'userId'): string {
@@ -148,5 +150,16 @@ export async function resetPasswordBySystem(
   }
 
   const user = await findUserOr404(deps, userId);
-  return writePassword(deps, user, newPassword, false, { by: 'system' });
+  const result = await writePassword(deps, user, newPassword, false, { by: 'system' });
+
+  // Forgot-password means whoever holds the old password may be logged in: end every session
+  // (Asaff, 2026-11-20: only this reset revokes sessions; other password changes don't)
+  let sessionsRevoked: number | null = null;
+  try {
+    sessionsRevoked = await deps.system.revokeUserSessions(user.userId, 'password-reset');
+    logger.info('Password reset: sessions revoked', { userId: user.userId, sessionsRevoked });
+  } catch {
+    logger.error('Password reset: password changed but sessions NOT revoked', { userId: user.userId });
+  }
+  return { ...result, sessionsRevoked };
 }

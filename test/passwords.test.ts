@@ -105,7 +105,7 @@ describe('POST /users/:userId/password/reset (forgot-password, system:set-passwo
     const app = testApp(s);
     const res = await reset(app, USER, { newPassword: 'NewPassw0rd2' }, TOKEN);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: 'password_changed', gridSync: 'ok' });
+    expect(res.body).toEqual({ status: 'password_changed', gridSync: 'ok', sessionsRevoked: 0 });
     expect(s.passwordSets).toEqual([{ userId: USER, newPassword: 'NewPassw0rd2', isInitial: false }]);
 
     const again = await reset(app, USER, { newPassword: 'NewPassw0rd3' }, TOKEN);

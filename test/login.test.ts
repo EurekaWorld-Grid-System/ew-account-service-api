@@ -113,13 +113,44 @@ describe('POST /auth/login: MFA', () => {
     expect(s.mfa.get(USER)!.isInitial).toBe(false);
   });
 
-  it('wrong code → 401 INVALID_MFA_TOKEN (counts as a failure), nothing marked', async () => {
+  it('wrong code → 401 INVALID_MFA_TOKEN without requiresCaptcha, nothing marked', async () => {
     const s = withMfa(false, '2026-01-01T00:00:00Z');
     const app = testApp(s);
     const res = await login(app, { ...creds, mfaToken: '000000' === code() ? '111111' : '000000' });
     expect([res.status, res.body.code, res.body.status]).toEqual([401, 'INVALID_MFA_TOKEN', 'MFA_REQUIRED']);
+    expect(res.body.requiresCaptcha).toBeUndefined();
     expect(s.mfaVerified).toHaveLength(0);
     expect((await login(app, { ...creds, mfaToken: 'abc' })).body.code).toBe('INVALID_MFA_TOKEN');
+  });
+
+  it('correct password after 3 failures (with captcha) → no captcha on the MFA step or the QR request', async () => {
+    const s = withMfa(true);
+    const app = testApp(s);
+    for (let i = 0; i < 3; i++) await login(app, { ...creds, password: 'nope' });
+    expect((await login(app, creds)).body.code).toBe('CAPTCHA_REQUIRED');
+    expect((await login(app, { ...creds, captchaToken: 't' })).body).toEqual({ status: 'MFA_INITIAL' });
+    const qr = await request(app).post('/auth/mfa/qr').set('X-Api-Key', API_KEY).set('X-Client-IP', '203.0.113.7').send(creds);
+    expect(qr.status).toBe(200);
+    expect((await login(app, { ...creds, mfaToken: code() })).status).toBe(200);
+  });
+
+  it('a wrong password still needs the captcha once past the threshold', async () => {
+    const app = testApp(withMfa(false, '2026-01-01T00:00:00Z'));
+    for (let i = 0; i < 3; i++) await login(app, { ...creds, password: 'nope' });
+    expect((await login(app, { ...creds, password: 'nope', mfaToken: '123456' })).body.code).toBe('CAPTCHA_REQUIRED');
+  });
+
+  it('5 wrong codes per user in 15 min → 429 RATE_LIMITED (from any IP), even with the right code', async () => {
+    const app = testApp(withMfa(false, '2026-01-01T00:00:00Z'));
+    const wrong = '000000' === code() ? '111111' : '000000';
+    for (let i = 0; i < 5; i++) {
+      const r = await login(app, { ...creds, mfaToken: wrong }, `203.0.113.${10 + i}`);
+      expect(r.body.code).toBe('INVALID_MFA_TOKEN');
+    }
+    const res = await login(app, { ...creds, mfaToken: code() }, '198.51.100.1');
+    expect([res.status, res.body.code, res.body.status]).toEqual([429, 'RATE_LIMITED', 'MFA_REQUIRED']);
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+    expect((await login(app, creds, '198.51.100.1')).body).toEqual({ status: 'MFA_REQUIRED' }); // password step unaffected
   });
 
   it('a code can not be reused within its time step', async () => {

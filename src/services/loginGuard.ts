@@ -84,6 +84,56 @@ export class MemoryLoginGuard implements LoginGuard {
   }
 }
 
+// ── MFA code guard (0.5.0) ───────────────────────────────────────────────────
+// Once the password is correct the login counters reset and no captcha is asked (Asaff,
+// 2026-11-20: the captcha protects the username and password only). The 6-digit code gets its own
+// limit instead, keyed on the user (not the IP), so it can't be spread over addresses:
+// MFA_MAX_FAILURES wrong codes within MFA_WINDOW_MS → 429 until the oldest one leaves the window.
+const MFA_WINDOW_MS = 15 * 60 * 1000;
+export const MFA_MAX_FAILURES = 5;
+
+export interface MfaGuard {
+  check(userId: string): { blocked: boolean; retryAfterMs?: number };
+  recordFailure(userId: string): void;
+  reset(userId: string): void;
+}
+
+export class MemoryMfaGuard implements MfaGuard {
+  private readonly failures = new Map<string, number[]>();
+
+  constructor() {
+    setInterval(() => {
+      const now = Date.now();
+      for (const [k, list] of this.failures.entries()) {
+        const kept = list.filter(t => now - t < MFA_WINDOW_MS);
+        if (kept.length === 0) this.failures.delete(k);
+        else this.failures.set(k, kept);
+      }
+    }, 5 * 60 * 1000).unref();
+  }
+
+  private recent(userId: string): number[] {
+    const now = Date.now();
+    const list = (this.failures.get(userId.toLowerCase()) ?? []).filter(t => now - t < MFA_WINDOW_MS);
+    this.failures.set(userId.toLowerCase(), list);
+    return list;
+  }
+
+  check(userId: string): { blocked: boolean; retryAfterMs?: number } {
+    const list = this.recent(userId);
+    if (list.length < MFA_MAX_FAILURES) return { blocked: false };
+    return { blocked: true, retryAfterMs: MFA_WINDOW_MS - (Date.now() - list[0]) };
+  }
+
+  recordFailure(userId: string): void {
+    this.recent(userId).push(Date.now());
+  }
+
+  reset(userId: string): void {
+    this.failures.delete(userId.toLowerCase());
+  }
+}
+
 /** reCAPTCHA v2 verification (copied from ew-portal-api). Never logs the secret. */
 export function recaptchaVerifier(secretKey: string): (token: string) => Promise<boolean> {
   return async (token: string) => {

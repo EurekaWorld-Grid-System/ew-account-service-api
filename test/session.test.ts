@@ -166,6 +166,46 @@ describe('POST /auth/logout', () => {
   });
 });
 
+describe('logout everywhere and password changes', () => {
+  async function twoSessions() {
+    const a = await loggedIn();
+    const res = await request(a.app).post('/auth/login').set('X-Api-Key', API_KEY).set('X-Client-IP', '198.51.100.9').send(creds);
+    const sid2 = (jwt.decode(res.body.accessToken) as { sid: string }).sid;
+    return { ...a, sid2 };
+  }
+
+  it('plain logout ends this session only', async () => {
+    const { app, s, access, sid, sid2 } = await twoSessions();
+    const res = await post(app, '/auth/logout').set('Authorization', `Bearer ${access}`);
+    expect(res.body).toEqual({ message: 'Logged out', sessionsRevoked: 1 });
+    expect(s.sessions.get(sid)!.revokedReason).toBe('logout');
+    expect(s.sessions.get(sid2)!.revokedReason).toBeNull();
+  });
+
+  it('{ allSessions: true } ends every session of the user', async () => {
+    const { app, s, access, sid, sid2 } = await twoSessions();
+    const res = await post(app, '/auth/logout').set('Authorization', `Bearer ${access}`).send({ allSessions: true });
+    expect(res.body).toEqual({ message: 'Logged out', sessionsRevoked: 2 });
+    expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['logout-all', 'logout-all']);
+  });
+
+  it('forgot-password reset revokes every session; a normal password change does not', async () => {
+    const { app, s, sid, sid2 } = await twoSessions();
+    const change = await request(app).put(`/users/${USER}/password`).set('X-Api-Key', API_KEY)
+      .send({ newPassword: 'NewPassw0rd2', actingUserId: USER, actingUserPassword: 'OldPassw0rd1' });
+    expect(change.status).toBe(200);
+    expect(change.body.sessionsRevoked).toBeUndefined();
+    expect(s.sessions.get(sid)!.revokedReason).toBeNull();
+
+    const TOKEN = '33333333-3333-4333-8333-333333333333';
+    s.serviceTokens.push({ tokenId: TOKEN, action: 'system:set-password', subjectUserId: USER });
+    const reset = await request(app).post(`/users/${USER}/password/reset`).set('X-Api-Key', API_KEY)
+      .set('X-Service-Token', TOKEN).send({ newPassword: 'NewPassw0rd3' });
+    expect(reset.body).toMatchObject({ status: 'password_changed', sessionsRevoked: 2 });
+    expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['password-reset', 'password-reset']);
+  });
+});
+
 describe('GET /auth/.well-known/jwks.json', () => {
   it('the public key, with the same kid as ew-portal-api', async () => {
     const res = await request(testApp()).get('/auth/.well-known/jwks.json').set('X-Api-Key', API_KEY);

@@ -1,6 +1,6 @@
 import { createApp } from './app';
 import { config, loadLoginConfig, loadRegistrationConfig, API_VERSION, SERVICE_NAME } from './config';
-import { MemoryLoginGuard, recaptchaVerifier } from './services/loginGuard';
+import { MemoryLoginGuard, MemoryMfaGuard, recaptchaVerifier } from './services/loginGuard';
 import { TokenIssuer } from './services/tokens';
 import { createDatabases } from './services/db';
 import { HttpRobustClient } from './services/robust';
@@ -27,6 +27,7 @@ const app = createApp({
     bms,
     system: dbs.system,
     guard: new MemoryLoginGuard(),
+    mfaGuard: new MemoryMfaGuard(),
     verifyCaptcha: recaptchaVerifier(loginCfg.recaptchaSecretKey),
     tokens: new TokenIssuer({
       privateKey: loginCfg.jwtPrivateKey,

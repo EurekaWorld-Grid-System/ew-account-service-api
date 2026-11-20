@@ -262,6 +262,11 @@ export class MysqlSystemRepository implements SystemRepository {
     return !!r && Number(r.revoked) > 0;
   }
 
+  async revokeUserSessions(userId: string, reason: string): Promise<number> {
+    const [r] = await this.call('CALL sp_revoke_user_auth_sessions(?, ?)', [userId, reason]);
+    return r ? Number(r.revoked) : 0;
+  }
+
   async consumeServiceToken(tokenId: string): Promise<ServiceToken | null> {
     // The routine selects exactly one row
     const rows = await this.call('CALL sp_consume_service_action_token(?)', [tokenId]);
