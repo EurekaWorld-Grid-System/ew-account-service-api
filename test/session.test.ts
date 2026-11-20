@@ -189,7 +189,18 @@ describe('logout everywhere and password changes', () => {
     expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['logout-all', 'logout-all']);
   });
 
-  it('forgot-password reset revokes every session only with revokeAllSessions; a normal change never', async () => {
+  it('password change: sessions revoked only with revokeAllSessions', async () => {
+    const { app, s, sid, sid2 } = await twoSessions();
+    const change = (b: Record<string, unknown>) =>
+      request(app).put(`/users/${USER}/password`).set('X-Api-Key', API_KEY).send(b);
+    expect((await change({ newPassword: 'NewPassw0rd2', actingUserId: USER, actingUserPassword: 'OldPassw0rd1', revokeAllSessions: 'yes' })).body.code).toBe('VALIDATION_ERROR');
+    expect(s.passwordSets).toHaveLength(0);
+    const res = await change({ newPassword: 'NewPassw0rd2', actingUserId: USER, actingUserPassword: 'OldPassw0rd1', revokeAllSessions: true });
+    expect(res.body).toEqual({ status: 'password_changed', gridSync: 'ok', sessionsRevoked: 2 });
+    expect([s.sessions.get(sid)!.revokedReason, s.sessions.get(sid2)!.revokedReason]).toEqual(['password-change', 'password-change']);
+  });
+
+  it('forgot-password reset revokes every session only with revokeAllSessions; without it a change revokes none', async () => {
     const { app, s, sid, sid2 } = await twoSessions();
     const change = await request(app).put(`/users/${USER}/password`).set('X-Api-Key', API_KEY)
       .send({ newPassword: 'NewPassw0rd2', actingUserId: USER, actingUserPassword: 'OldPassw0rd1' });

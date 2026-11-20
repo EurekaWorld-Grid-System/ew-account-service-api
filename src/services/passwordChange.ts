@@ -23,7 +23,7 @@ export interface PasswordChangeResult {
   /** ok: grid password updated · failed: BMS changed, grid not (GRID_PASSWORD_SYNC_FAILED) · skipped: ROBUST_SKIP */
   gridSync: 'ok' | 'failed' | 'skipped';
   code?: 'GRID_PASSWORD_SYNC_FAILED';
-  /** forgot-password reset with revokeAllSessions only: sessions revoked (null when revoking failed; the password is changed anyway) */
+  /** only with revokeAllSessions: the user's sessions revoked (null when revoking failed; the password is changed anyway) */
   sessionsRevoked?: number | null;
 }
 
@@ -108,6 +108,7 @@ export async function changePassword(
     throw new AppError(400, 'VALIDATION_ERROR', 'isInitial must be a boolean');
   }
   const isInitial = body.isInitial === true;
+  const revokeAll = parseRevokeAll(body);
   const self = actingUserId === userId;
   if (self && newPassword === actingUserPassword) {
     throw new AppError(400, 'VALIDATION_ERROR', 'newPassword must differ from the current password');
@@ -121,7 +122,33 @@ export async function changePassword(
   }
 
   const user = self ? actingUser : await findUserOr404(deps, userId);
-  return writePassword(deps, user, newPassword, isInitial, { actingUserId, self });
+  const result = await writePassword(deps, user, newPassword, isInitial, { actingUserId, self });
+  return revokeAll ? revokeSessionsAfter(deps, user.userId, result, self ? 'password-change' : 'password-change-by-other') : result;
+}
+
+/** Optional { revokeAllSessions: true } on both password endpoints (Asaff, 2026-11-20/21), like logout's allSessions. */
+function parseRevokeAll(body: Record<string, unknown>): boolean {
+  if (body.revokeAllSessions !== undefined && typeof body.revokeAllSessions !== 'boolean') {
+    throw new AppError(400, 'VALIDATION_ERROR', 'revokeAllSessions must be a boolean');
+  }
+  return body.revokeAllSessions === true;
+}
+
+/** End every session of the user after the password was changed (never fails the request). */
+async function revokeSessionsAfter(
+  deps: PasswordChangeDeps,
+  userId: string,
+  result: PasswordChangeResult,
+  reason: string
+): Promise<PasswordChangeResult> {
+  let sessionsRevoked: number | null = null;
+  try {
+    sessionsRevoked = await deps.system.revokeUserSessions(userId, reason);
+    logger.info('Password changed: sessions revoked', { userId, reason, sessionsRevoked });
+  } catch {
+    logger.error('Password changed but sessions NOT revoked', { userId, reason });
+  }
+  return { ...result, sessionsRevoked };
 }
 
 /** POST /users/:userId/password/reset — forgot-password; needs a `system:set-password` service token. */
@@ -136,6 +163,7 @@ export async function resetPasswordBySystem(
     throw new AppError(403, 'INVALID_SERVICE_TOKEN', 'Invalid or expired service token');
   }
   const newPassword = parsePassword(body.newPassword, 'newPassword');
+  const revokeAll = parseRevokeAll(body);
 
   // One-time: consumed (deleted) before any other check, so a token can never be replayed. The
   // routine returns what the token was minted for; it must match this request.
@@ -151,16 +179,6 @@ export async function resetPasswordBySystem(
 
   const user = await findUserOr404(deps, userId);
   const result = await writePassword(deps, user, newPassword, false, { by: 'system' });
-  if (body.revokeAllSessions !== true) return result;
-
-  // Optional (Asaff, 2026-11-20), like logout's allSessions: whoever holds the old password may be
-  // logged in, so the caller can end every session. Other password changes revoke nothing.
-  let sessionsRevoked: number | null = null;
-  try {
-    sessionsRevoked = await deps.system.revokeUserSessions(user.userId, 'password-reset');
-    logger.info('Password reset: sessions revoked', { userId: user.userId, sessionsRevoked });
-  } catch {
-    logger.error('Password reset: password changed but sessions NOT revoked', { userId: user.userId });
-  }
-  return { ...result, sessionsRevoked };
+  // Whoever holds the old password may be logged in: the caller can end every session
+  return revokeAll ? revokeSessionsAfter(deps, user.userId, result, 'password-reset') : result;
 }

@@ -157,15 +157,23 @@ this component's user `EXECUTE` on them (production; dev uses the shared user):
 | `sp_rotate_auth_session` | refresh (atomic rotation, grace window, reuse detection) |
 | `sp_check_auth_session` | verify |
 | `sp_revoke_auth_session` | logout, refresh (user gone) |
-| `sp_revoke_user_auth_sessions` | forgot-password reset with `{ "revokeAllSessions": true }`, logout with `{ "allSessions": true }` |
+| `sp_revoke_user_auth_sessions` | password change or forgot-password reset with `{ "revokeAllSessions": true }`, logout with `{ "allSessions": true }` |
 
-A forgot-password reset (`POST /users/:userId/password/reset`) revokes every session of the user when the body has
-`"revokeAllSessions": true`; other password changes never do. Also in 0.5.0: once the password is correct the login counters reset, so the MFA step and the QR
+Both password endpoints (`PUT /users/:userId/password` and the forgot-password `POST /users/:userId/password/reset`)
+revoke every session of the user (the one whose password changed) when the body has `"revokeAllSessions": true`;
+without it they revoke nothing. The reply then also has `sessionsRevoked`. Also in 0.5.0: once the password is correct the login counters reset, so the MFA step and the QR
 request need no captcha; wrong MFA codes have their own limit (5 per user in 15 minutes → 429 `RATE_LIMITED`).
 
 Install the SQL **before** deploying 0.5.0: login fails with 503 `SYSTEM_DB_UNAVAILABLE` without it. Tokens issued
 before 0.5.0 (or by ew-portal-api) have no session, so once ew-portal-api proxies refresh and verify, every user logs
 in once. No new secrets or config.
+
+## Admin lists (0.5.0, once)
+
+`db/ew_system_admin_index.sql` creates `admin_index` and `system_admin_index` in `ew_system` (account id + creation
+date, maintained by hand for now) and the routines `sp_is_admin(account_id)` → `{ is_admin }` and
+`sp_is_system_admin(account_id)` → `{ is_system_admin }`, with `EXECUTE` for this component's user. Run it like the
+other `ew_system` files. The service doesn't call them yet.
 
 ## Redeploy
 
