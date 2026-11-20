@@ -138,6 +138,31 @@ Put the ARNs into `config.env` (`JWT_PRIVATE_KEY_SECRET`, `RECAPTCHA_SECRET_KEY_
 `BMS_LOGIN_FALLBACK_ENABLED` to ew-portal-api's production value, and commit. The execution role's
 `$APP-secrets` policy already covers `$APP/*`. No new database grants.
 
+## Sessions setup (0.5.0, once)
+
+0.5.0 adds server-side sessions and the session endpoints copied from ew-portal-api:
+`POST /auth/refresh`, `POST /auth/logout`, `GET /auth/.well-known/jwks.json`, plus `POST /auth/verify` (what
+ew-portal-api's `requireAuth` does, and also checks that the session is still active). Every login creates a row in
+`ew_system.auth_sessions`; tokens carry its id (`sid`), and the refresh token also its current `jti`, which every
+refresh rotates. An old refresh token presented again (after a 60-second grace window for parallel tabs) revokes
+the whole session.
+
+As a DB admin, run `db/ew_system_auth_sessions.sql` once per environment (`USE dev_ew_system;` in dev,
+`USE ew_system;` in production). It creates `auth_sessions` and five `SQL SECURITY DEFINER` routines, and grants
+this component's user `EXECUTE` on them (production; dev uses the shared user):
+
+| Routine | Used by |
+| --- | --- |
+| `sp_create_auth_session` | login (also purges sessions expired over 7 days ago) |
+| `sp_rotate_auth_session` | refresh (atomic rotation, grace window, reuse detection) |
+| `sp_check_auth_session` | verify |
+| `sp_revoke_auth_session` | logout, refresh (user gone) |
+| `sp_revoke_user_auth_sessions` | not called yet: every session of a user |
+
+Install the SQL **before** deploying 0.5.0: login fails with 503 `SYSTEM_DB_UNAVAILABLE` without it. Tokens issued
+before 0.5.0 (or by ew-portal-api) have no session, so once ew-portal-api proxies refresh and verify, every user logs
+in once. No new secrets or config.
+
 ## Redeploy
 
 ```bash

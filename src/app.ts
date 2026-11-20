@@ -14,7 +14,7 @@ export interface AppOptions {
   apiKey: string;
   /** Registration and password change share the same repositories and clients */
   registration: RegistrationDeps;
-  /** POST /auth/login, POST /auth/mfa/qr */
+  /** /auth/*: login, MFA QR, refresh, verify, logout, JWKS */
   login: LoginDeps;
 }
 

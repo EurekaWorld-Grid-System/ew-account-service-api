@@ -1,6 +1,6 @@
 {
   "name": "ew-account-service-api",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "EurekaWorld Account Service API: internal service that owns account management (first release: user registration backend)",
   "main": "dist/index.js",

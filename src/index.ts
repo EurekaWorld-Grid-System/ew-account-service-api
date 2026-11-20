@@ -25,6 +25,7 @@ const app = createApp({
   login: {
     index: dbs.index,
     bms,
+    system: dbs.system,
     guard: new MemoryLoginGuard(),
     verifyCaptcha: recaptchaVerifier(loginCfg.recaptchaSecretKey),
     tokens: new TokenIssuer({

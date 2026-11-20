@@ -46,7 +46,7 @@ describe('POST /auth/login (copied from ew-portal-api)', () => {
     expect(cookie).toMatch(/HttpOnly/);
     expect(cookie).toMatch(/SameSite=Strict/);
     const refresh = jwt.verify(decodeURIComponent(cookie.split('ewRefreshToken=')[1].split(';')[0]), keys.publicKey) as Record<string, unknown>;
-    expect(refresh).toMatchObject({ sub: USER, type: 'refresh' });
+    expect(refresh).toMatchObject({ sub: USER, type: 'refresh', sid: claims.sid });
   });
 
   it('wrong password / unknown user → 401 INVALID_CREDENTIALS; captcha after 3 failures', async () => {

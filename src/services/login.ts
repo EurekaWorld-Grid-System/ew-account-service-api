@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger';
 import { LoginGuard } from './loginGuard';
 import { TokenIssuer } from './tokens';
 import { otpauthUri, qrPng, TOTP_RE, verifyTotp } from './totp';
-import { BmsAdapterClient, BmsUserRef, Credentials, IndexRepository, LoginUser, Organization } from './types';
+import { BmsAdapterClient, BmsUserRef, Credentials, IndexRepository, LoginUser, Organization, SystemRepository } from './types';
 
 // POST /auth/login, copied from ew-portal-api (routes/auth.ts) and extended with MFA (Asaff,
 // 2026-11-16), plus POST /auth/mfa/qr for MFA initialisation.
@@ -13,12 +14,15 @@ import { BmsAdapterClient, BmsUserRef, Credentials, IndexRepository, LoginUser, 
 //                                    secret was never verified); no tokens
 //   hasMfa && mfaToken             → TOTP check on the BMS secret; on success bms-adapter marks it
 //                                    verified (LastVerificationOn; ends the initial state)
-//   then (or without MFA)          → access token + refresh cookie, same shape as ew-portal-api.
+//   then (or without MFA)          → access token + refresh cookie, same shape as ew-portal-api,
+//                                    in a new server-side session (0.5.0, services/session.ts).
 // Every request counts against the rate limit, so MFA codes can't be brute-forced.
 
 export interface LoginDeps {
   index: IndexRepository;
   bms: BmsAdapterClient;
+  /** ew_system: login sessions */
+  system: SystemRepository;
   guard: LoginGuard;
   verifyCaptcha: (token: string) => Promise<boolean>;
   tokens: TokenIssuer;
@@ -39,6 +43,7 @@ export interface LoginReply {
   body: Record<string, unknown>;
   headers?: Record<string, string>;
   refreshToken?: string;
+  clearRefreshCookie?: boolean;
 }
 
 interface Authenticated {
@@ -141,7 +146,17 @@ export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginRe
     if (credentials.mfaIsInitial) logger.info('Login: MFA initialised', { userId: user.userId, accountId: user.accountId });
   }
 
-  // 8 — success (globalRole already resolved by bms-adapter)
+  // 8 — success (globalRole already resolved by bms-adapter): a new session
+  const sessionId = randomUUID();
+  const refreshJti = randomUUID();
+  const refresh = deps.tokens.signRefreshToken(user.userId, sessionId, refreshJti);
+  await deps.system.createSession({
+    sessionId,
+    userId: user.userId,
+    refreshJti,
+    ttlSeconds: refresh.ttlSeconds,
+    clientIp: input.ip === 'unknown' ? null : input.ip,
+  });
   deps.guard.recordSuccess(key);
   const globalRole = credentials.globalRole.toLowerCase();
   const claims = {
@@ -156,7 +171,7 @@ export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginRe
   return {
     status: 200,
     body: {
-      accessToken: deps.tokens.signAccessToken(claims),
+      accessToken: deps.tokens.signAccessToken({ ...claims, sid: sessionId }),
       user: {
         userId: user.userId,
         accountId: user.accountId,
@@ -167,7 +182,7 @@ export async function login(deps: LoginDeps, input: LoginInput): Promise<LoginRe
         isInitial: credentials.isInitial,
       },
     },
-    refreshToken: deps.tokens.signRefreshToken(user.userId),
+    refreshToken: refresh.token,
   };
 }
 

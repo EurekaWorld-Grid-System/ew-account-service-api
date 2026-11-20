@@ -3,6 +3,7 @@ import { Request, Router } from 'express';
 import { logger } from '../utils/logger';
 import { requireApiKey } from '../middleware/apiKey';
 import { login, LoginDeps, LoginInput, LoginReply, mfaQr } from '../services/login';
+import { logout, refresh, verify } from '../services/session';
 import { REFRESH_TOKEN_COOKIE } from '../services/tokens';
 
 // /auth/* — called by ew-portal-api, which proxies the Portal frontend's requests unchanged and
@@ -33,6 +34,7 @@ export function createAuthRouter(apiKey: string, deps: LoginDeps): Router {
   const send = (res: import('express').Response, r: LoginReply) => {
     for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v);
     if (r.refreshToken) res.cookie(REFRESH_TOKEN_COOKIE, r.refreshToken, deps.tokens.refreshCookieOptions());
+    else if (r.clearRefreshCookie) res.clearCookie(REFRESH_TOKEN_COOKIE, deps.tokens.clearCookieOptions());
     res.setHeader('Cache-Control', 'no-store');
     res.status(r.status).json(r.body);
   };
@@ -53,5 +55,45 @@ export function createAuthRouter(apiKey: string, deps: LoginDeps): Router {
     send(res, r);
   });
 
+  // ── Sessions (0.5.0) ─────────────────────────────────────────────────────────
+  // ew-portal-api forwards the browser's Cookie header (refresh) or Authorization header
+  // (verify, logout) and relays Set-Cookie back, as it does for login.
+
+  // Public key for verifying access tokens (same document and kid as ew-portal-api)
+  router.get('/auth/.well-known/jwks.json', (_req, res) => {
+    res.json(deps.tokens.jwks());
+  });
+
+  // Cookie: ewRefreshToken=… → { accessToken } + new refresh cookie
+  router.post('/auth/refresh', async (req, res) => {
+    send(res, await refresh(deps, readCookie(req.get('Cookie'), REFRESH_TOKEN_COOKIE)));
+  });
+
+  // Authorization: Bearer <access token> → 200 { claims } when valid and its session is active
+  router.post('/auth/verify', async (req, res) => {
+    send(res, await verify(deps, req.get('Authorization')));
+  });
+
+  // Authorization: Bearer <access token> → revokes its session, clears the cookie
+  router.post('/auth/logout', async (req, res) => {
+    send(res, await logout(deps, req.get('Authorization')));
+  });
+
   return router;
+}
+
+/** One cookie's value from a Cookie header (no cookie-parser: this is the only cookie read). */
+export function readCookie(header: string | undefined, name: string): string | undefined {
+  for (const part of (header ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) {
+      const v = part.slice(i + 1).trim();
+      try {
+        return decodeURIComponent(v);
+      } catch {
+        return v;
+      }
+    }
+  }
+  return undefined;
 }

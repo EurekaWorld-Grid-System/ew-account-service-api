@@ -21,12 +21,39 @@ export interface IndexRepository {
   findLoginUser(username: string): Promise<LoginUser | null>;
   /** A BMS user from user_index + institute_index (null when not in the index). */
   findUser(bmsUserId: string): Promise<IndexedUser | null>;
+  /** Refresh lookup by user_index.user_id ⋈ account_index (ew-portal-api lookupByUserId). */
+  findSessionUser(bmsUserId: string): Promise<LoginUser | null>;
 }
 
 /** ew_system (EXECUTE on its SQL SECURITY DEFINER routines only). */
 export interface SystemRepository {
   /** sp_consume_service_action_token: the token's details when it existed and hadn't expired (it's deleted either way). */
   consumeServiceToken(tokenId: string): Promise<ServiceToken | null>;
+  /** sp_create_auth_session (login). */
+  createSession(s: NewSession): Promise<void>;
+  /** sp_rotate_auth_session (refresh), atomic. */
+  rotateSession(sessionId: string, presentedJti: string, newJti: string, ttlSeconds: number, graceSeconds: number): Promise<SessionRotation>;
+  /** sp_check_auth_session: not revoked and not expired. */
+  isSessionActive(sessionId: string): Promise<boolean>;
+  /** sp_revoke_auth_session: true when an active session was revoked. */
+  revokeSession(sessionId: string, reason: string): Promise<boolean>;
+}
+
+export interface NewSession {
+  sessionId: string;
+  userId: string;
+  refreshJti: string;
+  ttlSeconds: number;
+  clientIp: string | null;
+}
+
+export type SessionRotationResult = 'OK' | 'GRACE' | 'REUSED' | 'REVOKED' | 'EXPIRED' | 'NOT_FOUND';
+
+export interface SessionRotation {
+  result: SessionRotationResult;
+  userId: string | null;
+  /** OK: the new jti; GRACE: the session's current jti; otherwise null */
+  refreshJti: string | null;
 }
 
 export interface ServiceToken {

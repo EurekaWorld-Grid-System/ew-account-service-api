@@ -9,7 +9,10 @@ import {
   IndexedUser,
   IndexRepository,
   LoginUser,
+  NewSession,
   Organization,
+  SessionRotation,
+  SessionRotationResult,
   ServiceToken,
   SystemRepository,
 } from './types';
@@ -113,6 +116,26 @@ export class MysqlIndexRepository implements IndexRepository {
     };
   }
 
+  async findSessionUser(bmsUserId: string): Promise<LoginUser | null> {
+    // Same query as ew-portal-api /auth/refresh (auroraClient.lookupByUserId)
+    const rows = await this.rows(
+      'SELECT ai.id AS accountId, ai.username AS username, ui.user_id AS userId, ' +
+        'ui.institute_id AS instituteId, ai.organization AS organization ' +
+        'FROM user_index ui JOIN account_index ai ON ai.id = ui.account_id ' +
+        'WHERE ui.user_id = ? LIMIT 1',
+      [bmsUserId]
+    );
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return {
+      accountId: String(r.accountId),
+      username: String(r.username),
+      userId: String(r.userId),
+      instituteId: String(r.instituteId),
+      organization: String(r.organization),
+    };
+  }
+
   async findUser(bmsUserId: string): Promise<IndexedUser | null> {
     const rows = await this.rows(
       'SELECT ui.user_id, ui.username, ui.account_id, ui.institute_id, ui.open_sim_user_id, ii.organization ' +
@@ -187,19 +210,61 @@ export class MysqlSystemRepository implements SystemRepository {
     private readonly timeoutMs: number
   ) {}
 
-  async consumeServiceToken(tokenId: string): Promise<ServiceToken | null> {
-    let rows: RowDataPacket[];
+  /** CALL a routine; returns its first result set ([] for routines that select nothing). */
+  private async call(sql: string, values: unknown[]): Promise<RowDataPacket[]> {
     try {
-      // CALL returns [resultSet, okPacket]; the routine selects exactly one row
-      const [sets] = await this.pool.query<RowDataPacket[][]>({
-        sql: 'CALL sp_consume_service_action_token(?)',
-        values: [tokenId],
-        timeout: this.timeoutMs,
-      });
-      rows = sets[0] ?? [];
+      // CALL returns [resultSet, okPacket], or just the okPacket when the routine selects nothing
+      const [sets] = await this.pool.query<RowDataPacket[][]>({ sql, values, timeout: this.timeoutMs });
+      return Array.isArray(sets) && Array.isArray(sets[0]) ? sets[0] : [];
     } catch (err) {
       throw dbFailure('SYSTEM_DB_UNAVAILABLE', err);
     }
+  }
+
+  async createSession(s: NewSession): Promise<void> {
+    await this.call('CALL sp_create_auth_session(?, ?, ?, ?, ?)', [
+      s.sessionId,
+      s.userId,
+      s.refreshJti,
+      s.ttlSeconds,
+      s.clientIp,
+    ]);
+  }
+
+  async rotateSession(
+    sessionId: string,
+    presentedJti: string,
+    newJti: string,
+    ttlSeconds: number,
+    graceSeconds: number
+  ): Promise<SessionRotation> {
+    const [r] = await this.call('CALL sp_rotate_auth_session(?, ?, ?, ?, ?)', [
+      sessionId,
+      presentedJti,
+      newJti,
+      ttlSeconds,
+      graceSeconds,
+    ]);
+    return {
+      result: (r ? String(r.result) : 'NOT_FOUND') as SessionRotationResult,
+      userId: r?.user_id ? String(r.user_id) : null,
+      refreshJti: r?.refresh_jti ? String(r.refresh_jti) : null,
+    };
+  }
+
+  async isSessionActive(sessionId: string): Promise<boolean> {
+    const [r] = await this.call('CALL sp_check_auth_session(?)', [sessionId]);
+    return !!r && Number(r.active) === 1;
+  }
+
+  async revokeSession(sessionId: string, reason: string): Promise<boolean> {
+    const [r] = await this.call('CALL sp_revoke_auth_session(?, ?)', [sessionId, reason]);
+    return !!r && Number(r.revoked) > 0;
+  }
+
+  async consumeServiceToken(tokenId: string): Promise<ServiceToken | null> {
+    // The routine selects exactly one row
+    const rows = await this.call('CALL sp_consume_service_action_token(?)', [tokenId]);
     const r = rows[0];
     if (!r || Number(r.found) !== 1) return null;
     return { action: String(r.action), subjectUserId: String(r.subject_user_id), actingUserId: String(r.acting_user_id) };

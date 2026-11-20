@@ -42,6 +42,18 @@ export interface FakeState {
   migrated: Set<string>; // usernames BmsLoginFallback can migrate
   captchaOk: boolean;
   mfaSecretMissing: boolean; // UseDoubleAuth set but no active DoubleAuths row
+  // Sessions (ew_system.auth_sessions)
+  sessions: Map<string, FakeSession>;
+}
+
+export interface FakeSession {
+  userId: string;
+  refreshJti: string;
+  previousJti: string | null;
+  rotatedAt: number | null; // ms
+  expiresAt: number; // ms
+  revokedReason: string | null;
+  clientIp: string | null;
 }
 
 export function fakeState(): FakeState {
@@ -88,6 +100,7 @@ export function fakeState(): FakeState {
     migrated: new Set(),
     captchaOk: true,
     mfaSecretMissing: false,
+    sessions: new Map(),
   };
 }
 
@@ -103,6 +116,44 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
         const [t] = s.serviceTokens.splice(i, 1);
         return { action: t.action, subjectUserId: t.subjectUserId, actingUserId: t.subjectUserId };
       },
+      // Same rules as db/ew_system_auth_sessions.sql
+      createSession: async n => {
+        s.sessions.set(n.sessionId, {
+          userId: n.userId,
+          refreshJti: n.refreshJti,
+          previousJti: null,
+          rotatedAt: null,
+          expiresAt: Date.now() + n.ttlSeconds * 1000,
+          revokedReason: null,
+          clientIp: n.clientIp,
+        });
+      },
+      rotateSession: async (sid, presented, newJti, ttl, grace) => {
+        const x = s.sessions.get(sid);
+        if (!x) return { result: 'NOT_FOUND', userId: null, refreshJti: null };
+        const none = { userId: x.userId, refreshJti: null };
+        if (x.revokedReason) return { result: 'REVOKED', ...none };
+        if (x.expiresAt <= Date.now()) return { result: 'EXPIRED', ...none };
+        if (x.refreshJti === presented) {
+          Object.assign(x, { previousJti: x.refreshJti, refreshJti: newJti, rotatedAt: Date.now(), expiresAt: Date.now() + ttl * 1000 });
+          return { result: 'OK', userId: x.userId, refreshJti: newJti };
+        }
+        if (x.previousJti === presented && x.rotatedAt !== null && x.rotatedAt > Date.now() - grace * 1000) {
+          return { result: 'GRACE', userId: x.userId, refreshJti: x.refreshJti };
+        }
+        x.revokedReason = 'reuse';
+        return { result: 'REUSED', ...none };
+      },
+      isSessionActive: async sid => {
+        const x = s.sessions.get(sid);
+        return !!x && !x.revokedReason && x.expiresAt > Date.now();
+      },
+      revokeSession: async (sid, reason) => {
+        const x = s.sessions.get(sid);
+        if (!x || x.revokedReason) return false;
+        x.revokedReason = reason;
+        return true;
+      },
     },
     index: {
       findCoupon: async c => s.coupons[c] ?? null,
@@ -110,6 +161,10 @@ export function fakeDeps(s: FakeState, robustSkip = false): RegistrationDeps {
       usernameExists: async u => s.usernames.has(u),
       avatarCodeExists: async a => s.avatars.has(a),
       findUser: async id => s.users.get(id) ?? null,
+      findSessionUser: async id => {
+        const u = s.users.get(id);
+        return u ? { accountId: u.accountId, username: u.username, userId: u.userId, instituteId: u.instituteId, organization: 'general' } : null;
+      },
       findLoginUser: async username => {
         const u = [...s.users.values()].find(x => x.username === username);
         if (!u || (username === 'late' && !s.migrated.has('done'))) return null;
@@ -193,6 +248,7 @@ export function testApp(s: FakeState = fakeState(), robustSkip = false) {
     login: {
       index: deps.index,
       bms: deps.bms,
+      system: deps.system,
       guard: new MemoryLoginGuard(),
       verifyCaptcha: async () => s.captchaOk,
       tokens: new TokenIssuer({
